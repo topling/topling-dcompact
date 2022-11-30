@@ -1,7 +1,13 @@
 export SHELL=bash
 CHECK_TERARK_FSA_LIB_UPDATE ?= 1
 ROCKSDB_HOME ?= ../../../..
+ifneq (,$(wildcard ../../../topling-core))
 TERARK_HOME ?= ../../../topling-core
+else ifneq (,$(wildcard ../../../topling-zip))
+TERARK_HOME ?= ../../../topling-zip
+else
+$(error "Fatal: not found topling-zip or topling-core")
+endif
 BOOST_INC ?= -I${TERARK_HOME}/boost-include
 WITH_BMI2 ?= $(shell ${TERARK_HOME}/cpu_has_bmi2.sh)
 CURRENT_MAKEFILE := $(lastword $(MAKEFILE_LIST))
