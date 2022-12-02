@@ -14,7 +14,7 @@
 
 首先要 mytopling.json 在打开 dcompact 选项的开关：
 
-```json
+```
 "CFOptions": {
   "default": {
     ...,
