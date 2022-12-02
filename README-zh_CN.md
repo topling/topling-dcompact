@@ -8,12 +8,24 @@
 2. 运行 dcompact\_worker 的一方称为 Worker，在 Server/Client 模型中，是 Server
 3. 同一个 worker 可以同时为多个 hoster 服务，同一个 hoster 也可以把自己的 compact 任务发给多个 worker 执行
 
-除了 ToplingDB 的动态库之外，dcompact\_worker.exe 还依赖 libcurl 及 libetcd-cpp-api，在此之外，对于用户自定义的插件，例如 MergeOperator, CompactionFilter 等，运行 dcompact\_worker 时需要通过 LD\_PRELOAD 加载相应的动态库。
-
+除了 ToplingDB 的动态库之外，dcompact\_worker.exe 还依赖 libcurl 及 libetcd-cpp-api，在此之外，对于用户自定义的插件，例如 MergeOperator, CompactionFilter 等，运行 dcompact\_worker 时需要通过 `LD_PRELOAD` 加载相应的动态库 `libmytopling_dc.so`。
 
 ## 1. json 配置
 
-分布式 Compact 在 json 配置文件中进行设置：
+首先要 mytopling.json 在打开 dcompact 选项的开关：
+
+```json
+"CFOptions": {
+  "default": {
+    ...,
+    "compaction_executor_factory": "dcompact",
+    ...
+  },
+```
+
+
+
+分布式配置在 json 中的 `CompactionExecutorFactory` 字段进行设置：
 ```json
   "CompactionExecutorFactory": {
     "dcompact": {
@@ -30,6 +42,7 @@
         },
         "etcd_root": "/dcompact-worker-cluster-1",
 
+        "web_domain": "topling.in",
         "hoster_root": "/nvmepool/shared/db1",
         "instance_name": "db1",
         "nfs_mnt_flags": "noatime,rdma",
@@ -62,7 +75,7 @@ etcd   | etcd 的连接选项，默认无认证，需要认证的话，有两种
 `hoster_root` | 该 db 的根目录，一般设置为与 DB::Open 中的 `path` 变量相同。
 `instance_name` | 该 db 实例名，在多租户场景下，CompactWorker 结点使用 instance\_name 区分不同的 db 实例
 `nfs_mnt_flags` | 保留
-`nfs_mnt_src`   | 保留
+`nfs_mnt_src`   | nfs 目录。需要 DB 结点和 Worker 结点都可以访问。 
 `nfs_mnt_opt`   | 保留
 `http_max_retry` | 最大重试次数
 `http_timeout` | http 连接的超时时间，一般情况下，超时即意味着出错
@@ -87,8 +100,16 @@ web_url | 在浏览器中通过 stat 查看状态，以及查看 log 文件
 
 当 MAX\_PARALLEL\_COMPACTIONS &gt; 0 时，在此模式下运行。
 
+下面的脚本需要安装 `numactl` 和 `liburing`：
+
+```shell
+sudo yum -y install numactl \
+                    liburing
+```
+
+
+
 ```bash
-. inject-env.sh
 export  WORKER_DB_ROOT=/tmp
 export  WORKER_DB_ROOT=/dev/shm
 rm -rf $WORKER_DB_ROOT/db1/* # db1 is test db instance_name
@@ -96,23 +117,27 @@ rm -rf /dev/shm/Terark-*
 ulimit -n 100000
 nodeset="0 1"
 
+# TerarkZipTable_XXX can be override here by env, which will
+# override the values defined in db Hoster side's json config.
+#
+# Hoster side's json config will pass to compact worker through
+# rpc, then it may be override by env defined here!
+export MULTI_PROCESS=true
+export ETCD_URL=192.168.100.100:2379
+export NFS_DYNAMIC_MOUNT=1
+export NFS_MOUNT_ROOT=/topling
+export MAX_PARALLEL_COMPACTIONS=16
+export TerarkZipTable_nltBuildThreads=16
+export TerarkZipTable_localTempDir=/dev/shm
+export TerarkZipTable_warmupLevel=kValue
+export MAX_WAITING_COMPACTIONS=128
+export DictZipBlobStore_zipThreads=28
+export ZipServer_nltBuildThreads=5
+export LD_LIBRARY_PATH=/path/to/LIBDIR:$LD_LIBRARY_PATH
+
 for i in $nodeset; do
-    # TerarkZipTable_XXX can be override here by env, which will
-    # override the values defined in db Hoster side's json config.
-    #
-    # Hoster side's json config will pass to compact worker through
-    # rpc, then it may be override by env defined here!
-    #
-    env ETCD_URL=192.168.100.100:2379 \
-        NFS_DYNAMIC_MOUNT=0 \
-        NFS_MOUNT_ROOT=/nvme-shared \
-        MAX_PARALLEL_COMPACTIONS=16 \
-        DictZipBlobStore_zipThreads=16 \
-        TerarkZipTable_nltBuildThreads=16 \
-        TerarkZipTable_localTempDir=/dev/shm \
-        TerarkZipTable_warmupLevel=kValue \
-        numactl --cpunodebind=$i -- $dbg ./dcompact_worker.exe \
-	-D listening_ports=$((8080+i)) &
+    numactl --cpunodebind=$i -- $dbg ./dcompact_worker.exe \
+    -D listening_ports=$((8080+i)) &
 done
 wait
 ```
@@ -142,5 +167,4 @@ ETCD\_PASSWORD | 空 | YES |
 ETCD\_CA       | 空 | YES | 指定 ca 文件路径，使用 {ca, cert, key} 链接 ETCD
 ETCD\_CERT     | 空 | YES | 指定 cert 文件路径，与 ca 一起使用时，也可以为空
 ETCD\_KEY      | 空 | YES | 指定 key 文件路径，与 ca 一起使用时，也可以为空
-
 
