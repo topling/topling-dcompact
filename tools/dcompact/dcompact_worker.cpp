@@ -1267,6 +1267,7 @@ class StatHttpHandler : public CivetHandler {
         vars["Server"] = json::parse(buf);
       }
       if (JsonSmartBool(query, "version")) {
+        JS_ToplingDB_AddVersion(js, html);
         if (JS_ZipTable_AddVersion) {
           JS_ZipTable_AddVersion(js, html);
         }
