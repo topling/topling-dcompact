@@ -115,9 +115,9 @@ extern void mg_print_cur_time(mg_connection *conn);
 extern std::string cur_time_stat();
 std::string ReadPostData(mg_connection* conn);
 extern void JS_TopTable_AddVersion(json& djs, bool html);
-extern json JS_TopZipTable_Global_Stat(bool html);
-extern json JS_TopZipTable_Global_Env();
-extern const char* StrDateTimeNow(); // in terark_zip_common.cc
+__attribute__((weak)) json JS_TopZipTable_Global_Stat(bool html);
+__attribute__((weak)) json JS_TopZipTable_Global_Env();
+extern const char* StrDateTimeNow(); // in builtin_table_factory.cc
 
 __attribute__((weak)) void JS_ZipTable_AddVersion(json& djs, bool html);
 
@@ -1224,27 +1224,30 @@ class StatHttpHandler : public CivetHandler {
       json js;
       bool from_db_node = JsonSmartBool(query, "from_db_node", false);
       bool html = JsonSmartBool(query, "html", true);
-      const char* tzkey = html ? "Top<br/>ling<br/>Zip" : "ToplingZip";
-      json& tz = js[tzkey] = JS_TopZipTable_Global_Stat(html);
       int verbose = JsonSmartInt(query, "verbose", 1);
-      if (verbose < 1) { // more important than waitQueueSize
-        tz.erase("sumUserKeyLen");
-        tz.erase("sumUserKeyNum");
+      if (JS_TopZipTable_Global_Env) {
+        const char* tzkey = html ? "Top<br/>ling<br/>Zip" : "ToplingZip";
+        json& tz = js[tzkey] = JS_TopZipTable_Global_Stat(html);
+        if (verbose < 1) { // more important than waitQueueSize
+          tz.erase("sumUserKeyLen");
+          tz.erase("sumUserKeyNum");
+        }
+        if (verbose < 2) { // more important than sumWaitingMem/sumWorkingMem
+          tz.erase("waitQueueSize");
+        }
+        if (verbose < 3) {
+          tz.erase("sumWaitingMem");
+          tz.erase("sumWorkingMem");
+        }
+        if (verbose >= 3) {
+          js["Env"] = JS_TopZipTable_Global_Env();
+        }
       }
-      if (verbose < 2) { // more important than sumWaitingMem/sumWorkingMem
-        tz.erase("waitQueueSize");
-      }
-      if (verbose < 3) {
-        tz.erase("sumWaitingMem");
-        tz.erase("sumWorkingMem");
-      }
+      json& vars = js["Vars"];
       if (verbose >= 3) {
-        js["Env"] = JS_TopZipTable_Global_Env();
-        json& vars = js["Vars"];
         ROCKSDB_JSON_SET_PROP(vars, NFS_MOUNT_ROOT);
         ROCKSDB_JSON_SET_PROP(vars, NFS_DYNAMIC_MOUNT);
       }
-      json& vars = js["Vars"];
       vars["MAX_PARALLEL"] = MAX_PARALLEL_COMPACTIONS;
       vars["Compactions"]["running"] = g_jobsRunning.load(std::memory_order_relaxed);
       vars["Compactions"]["waiting"] = g_workQueue.peekSize();
