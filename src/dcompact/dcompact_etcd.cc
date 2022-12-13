@@ -513,6 +513,9 @@ class DcompactEtcdExecFactory : public CompactExecFactoryCommon {
       }
       fee_conf.reset(new DcompactFeeConfig(js_fee));
     }
+    if (http_workers.empty()) {
+      THROW_InvalidArgument("http_workers must not be empty");
+    }
     // m_round_robin_idx - start at a random idx
     auto seed = std::chrono::system_clock::now().time_since_epoch().count();
     auto rand = std::mt19937_64(seed)();
