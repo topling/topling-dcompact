@@ -60,6 +60,7 @@ struct DcompactMeta {
   std::string etcd_root;
   std::string hoster_root;
   std::string output_root; // output_dir = "output_root/${job_id}"
+  std::string nfs_mnt_id;
   std::string nfs_mnt_src;
   std::string nfs_mnt_opt;
   std::string instance_name;

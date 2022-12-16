@@ -434,14 +434,20 @@ class DcompactEtcdExecFactory : public CompactExecFactoryCommon {
   std::string etcd_root;
   std::vector<std::unique_ptr<HttpParams> > http_workers; // http or https
   struct NFS_Mount {
+    std::string nfs_mnt_id; // with instance_name to identify worker side dir
     std::string nfs_mnt_src;
     std::string nfs_mnt_opt;
-    explicit NFS_Mount(const json& js) {
+    explicit NFS_Mount(const json& js, bool is_id_req) {
+      if (is_id_req)
+        ROCKSDB_JSON_REQ_PROP(js, nfs_mnt_id);
+      else
+        ROCKSDB_JSON_OPT_PROP(js, nfs_mnt_id);
       ROCKSDB_JSON_REQ_PROP(js, nfs_mnt_src);
       ROCKSDB_JSON_REQ_PROP(js, nfs_mnt_opt);
     }
     json ToJson() const {
       json js;
+      ROCKSDB_JSON_SET_PROP(js, nfs_mnt_id);
       ROCKSDB_JSON_SET_PROP(js, nfs_mnt_src);
       ROCKSDB_JSON_SET_PROP(js, nfs_mnt_opt);
       return js;
@@ -506,9 +512,9 @@ class DcompactEtcdExecFactory : public CompactExecFactoryCommon {
     HttpParams::ParseJsonToVec(js["http_workers"], &http_workers);
     if (auto iter = js.find("nfs_mnt_points"); js.end() != iter) {
       for (auto& one_js : iter.value())
-        nfs_mnt_points.emplace_back(one_js);
+        nfs_mnt_points.emplace_back(one_js, true);
     } else {
-      nfs_mnt_points.emplace_back(js);
+      nfs_mnt_points.emplace_back(js, false);
     }
 #ifdef TOPLING_DCOMPACT_USE_ETCD
     if (!js.contains("etcd")) {
@@ -570,7 +576,8 @@ class DcompactEtcdExecFactory : public CompactExecFactoryCommon {
       json& vecjs = djs["nfs_mnt_points"];
       for (auto& one : nfs_mnt_points) vecjs.push_back(one.ToJson());
       if (html && !nfs_mnt_points.empty())
-        vecjs[0]["<htmltab:col>"] = json::array({"nfs_mnt_src", "nfs_mnt_opt"});
+        vecjs[0]["<htmltab:col>"] =
+            json::array({"nfs_mnt_id", "nfs_mnt_src", "nfs_mnt_opt"});
     }
     CompactExecFactoryCommon::ToJson(dump_options, djs);
     if (fee_conf) {
@@ -690,6 +697,7 @@ try
   meta.output_root = params.cf_paths.back().path;
   if (!f->nfs_mnt_points.empty()) {
     auto rand_idx = f->m_round_robin_idx % f->nfs_mnt_points.size();
+    meta.nfs_mnt_id  = f->nfs_mnt_points[rand_idx].nfs_mnt_id;
     meta.nfs_mnt_src = f->nfs_mnt_points[rand_idx].nfs_mnt_src;
     meta.nfs_mnt_opt = f->nfs_mnt_points[rand_idx].nfs_mnt_opt;
   }
