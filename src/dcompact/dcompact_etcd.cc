@@ -433,8 +433,21 @@ class DcompactEtcdExecFactory : public CompactExecFactoryCommon {
   std::string etcd_url;
   std::string etcd_root;
   std::vector<std::unique_ptr<HttpParams> > http_workers; // http or https
-  std::string nfs_mnt_src;
-  std::string nfs_mnt_opt;
+  struct NFS_Mount {
+    std::string nfs_mnt_src;
+    std::string nfs_mnt_opt;
+    explicit NFS_Mount(const json& js) {
+      ROCKSDB_JSON_REQ_PROP(js, nfs_mnt_src);
+      ROCKSDB_JSON_REQ_PROP(js, nfs_mnt_opt);
+    }
+    json ToJson() const {
+      json js;
+      ROCKSDB_JSON_SET_PROP(js, nfs_mnt_src);
+      ROCKSDB_JSON_SET_PROP(js, nfs_mnt_opt);
+      return js;
+    }
+  };
+  std::vector<NFS_Mount> nfs_mnt_points;
   std::string report_url;
   std::string web_domain; // now just for iframe auto height
   std::string m_start_time;
@@ -491,8 +504,12 @@ class DcompactEtcdExecFactory : public CompactExecFactoryCommon {
       THROW_InvalidArgument("json[\"http_workers\"] is required");
     }
     HttpParams::ParseJsonToVec(js["http_workers"], &http_workers);
-    ROCKSDB_JSON_REQ_PROP(js, nfs_mnt_src);
-    ROCKSDB_JSON_REQ_PROP(js, nfs_mnt_opt);
+    if (auto iter = js.find("nfs_mnt_points"); js.end() != iter) {
+      for (auto& one_js : iter.value())
+        nfs_mnt_points.emplace_back(one_js);
+    } else {
+      nfs_mnt_points.emplace_back(js);
+    }
 #ifdef TOPLING_DCOMPACT_USE_ETCD
     if (!js.contains("etcd")) {
       //THROW_InvalidArgument("json[\"etcd\"] is required");
@@ -505,8 +522,7 @@ class DcompactEtcdExecFactory : public CompactExecFactoryCommon {
       etcd_url = ecp.url;
     }
 #endif
-    auto iter = js.find("fee_conf");
-    if (js.end() != iter) {
+    if (auto iter = js.find("fee_conf"); js.end() != iter) {
       auto& js_fee = iter.value();
       if (!js_fee.is_object()) {
         THROW_InvalidArgument("json[\"fee_conf\"] must be an object");
@@ -550,8 +566,12 @@ class DcompactEtcdExecFactory : public CompactExecFactoryCommon {
     } else {
       djs["workers"] = HttpParams::DumpVecToJson(http_workers);
     }
-    ROCKSDB_JSON_SET_PROP(djs, nfs_mnt_src);
-    ROCKSDB_JSON_SET_PROP(djs, nfs_mnt_opt);
+    {
+      json& vecjs = djs["nfs_mnt_points"];
+      for (auto& one : nfs_mnt_points) vecjs.push_back(one.ToJson());
+      if (html && !nfs_mnt_points.empty())
+        vecjs[0]["<htmltab:col>"] = json::array({"nfs_mnt_src", "nfs_mnt_opt"});
+    }
     CompactExecFactoryCommon::ToJson(dump_options, djs);
     if (fee_conf) {
       djs["fee_conf"] = fee_conf->ToJson();
@@ -668,8 +688,11 @@ try
   meta.dbname = dbname;
   meta.hoster_root = f->hoster_root;
   meta.output_root = params.cf_paths.back().path;
-  meta.nfs_mnt_src = f->nfs_mnt_src;
-  meta.nfs_mnt_opt = f->nfs_mnt_opt;
+  if (!f->nfs_mnt_points.empty()) {
+    auto rand_idx = f->m_round_robin_idx % f->nfs_mnt_points.size();
+    meta.nfs_mnt_src = f->nfs_mnt_points[rand_idx].nfs_mnt_src;
+    meta.nfs_mnt_opt = f->nfs_mnt_points[rand_idx].nfs_mnt_opt;
+  }
   meta.start_time = f->m_start_time;
   std::string output_dir = CatFmt(meta.output_root, "/job-%05d", meta.job_id);
   auto t0 = m_env->NowMicros();
