@@ -1,6 +1,6 @@
 # 分布式 Compact
 
-在 ToplingDB 中，dcompact(Distributed Compaction) 在形式上是作为一个 SidePlugin 实现的，也就是说，要使用分布式 Compact，用户代码不需要任何修改，只需要改 json/yaml 配置文件。
+在 ToplingDB 中，dcompact(Distributed Compaction) 在形式上是作为一个 [SidePlugin](https://github.com/topling/rockside/wiki) 实现的，也就是说，要使用分布式 Compact，用户代码不需要任何修改，只需要改 json/yaml 配置文件。
 
 在分布式 Compact 的实现中：
 
