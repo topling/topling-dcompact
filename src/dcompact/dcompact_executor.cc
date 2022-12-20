@@ -535,7 +535,10 @@ const {
     djs["dbcf_min_level"] = *m_dbcf_min_level_js;
   }
 }
-void CompactExecFactoryCommon::Update(const json&) {
+void CompactExecFactoryCommon::Update(const json& js) {
+  ROCKSDB_JSON_OPT_PROP(js, dcompact_min_level); // default 2
+  ROCKSDB_JSON_OPT_ENUM(js, info_log_level);
+  ROCKSDB_JSON_OPT_PROP(js, allow_fallback_to_local);
 }
 
 bool CompactExecFactoryCommon::ShouldRunLocal(const Compaction* c) const {
@@ -562,6 +565,14 @@ bool CompactExecFactoryCommon::ShouldRunLocal(const Compaction* c) const {
       Logger* info_log = c->immutable_options()->info_log.get();
       DEBG("ShouldRunLocal: output_level = %d, min_level[%s ~ %s] = %d",
             output_level, dbcf, m_dbcf_min_level.key(idx), min_level);
+      if (-1 == min_level) {
+        // this is a corner case(a bit useful for todis hash/set/zset)!
+        // run dcompact on bottom most only, if compact this cf needs read
+        // meta data from another db or cf, toper level may read many useless
+        // meta data, in this case, bottom most level compaction needs little
+        // meta data.
+        return output_level < dcompact_min_level || !c->bottommost_level();
+      }
       return output_level < min_level;
     }
   }
