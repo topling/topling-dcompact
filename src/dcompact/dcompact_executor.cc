@@ -302,6 +302,17 @@ static std::string ClassParams_get_params(const json* js, const char* func) {
 }
 
 template<class RawPtr>
+void SerDe_SerializeReq(FILE* f, const ObjectRpcParam& x,
+                        RawPtr p, const CompactionParams& params,
+                        const SidePluginRepo& repo) {
+  auto js = JS_CompactionParamsEncodePtr(&params);
+  auto serde = SerDeFac(p)->AcquirePlugin(x.clazz, js, repo);
+  Logger* info_log = params.info_log;
+  TRAC("SerDe_SerializeReq: clazz = %s, js = %s", x.clazz, js.dump());
+  serde->Serialize(f, *p);
+}
+
+template<class RawPtr>
 void SerDe_SerializeOpt(FILE* f, const ObjectRpcParam& x,
                         RawPtr p, const CompactionParams& params,
                         const SidePluginRepo& repo) {
@@ -316,6 +327,27 @@ void SerDe_SerializeOpt(FILE* f, const ObjectRpcParam& x,
   }
 }
 
+template<class ObjectPtr>
+void SetObjectRpcParamReqTpl(ObjectRpcParam& p, const ObjectPtr& obj,
+                             const CompactionParams& params,
+                             const SidePluginRepo& repo) {
+  Logger* info_log = params.info_log;
+  if (auto p_obj = GetRawPtr(obj)) {
+    p.clazz = obj->Name();
+    p.serde = [&,p_obj](FILE* f, const ObjectRpcParam& x) {
+      SerDe_SerializeReq(f, x, p_obj, params, repo);
+    };
+    if (const json* js = repo.GetCreationSpec(obj)) {
+      p.params = ClassParams_get_params(js, ROCKSDB_FUNC);
+    } else {
+      TERARK_DIE_S("obj must be defined in json repo: %s", p.clazz);
+    }
+    TRAC("SetObjectRpcParamReq: clazz = %s, params = %s", p.clazz, p.params);
+  }
+  else
+    TRAC("SetObjectRpcParamReq: clazz = %s, obj = null",
+        boost::core::demangle(typeid(decltype(*obj)).name()));
+}
 template<class ObjectPtr>
 void SetObjectRpcParamOptTpl(ObjectRpcParam& p, const ObjectPtr& obj,
                              const CompactionParams& params,
@@ -362,6 +394,8 @@ void CompactExecCommon::SetParams(CompactionParams* params, const Compaction* c)
   else
     params->compaction_log_level = m_factory->info_log_level;
 
+#define SetObjectRpcParamReq(cfo, field) \
+  SetObjectRpcParamReqTpl(params->field, cfo.field, *params, repo)
 #define SetObjectRpcParamOpt(cfo, field) \
   SetObjectRpcParamOptTpl(params->field, cfo.field, *params, repo)
 
@@ -369,7 +403,7 @@ void CompactExecCommon::SetParams(CompactionParams* params, const Compaction* c)
   SetObjectRpcParamOpt(imm_cfo, sst_partitioner_factory);
   SetObjectRpcParamOpt(imm_cfo, html_user_key_coder);
   SetObjectRpcParamOpt(mut_cfo, prefix_extractor);
-  SetObjectRpcParamOpt(imm_cfo, table_factory);
+  SetObjectRpcParamReq(imm_cfo, table_factory);
   SetObjectRpcParamOpt(imm_cfo, merge_operator);
   SetObjectRpcParamOpt(imm_cfo, user_comparator);
   size_t n_listeners = imm_cfo.listeners.size();
