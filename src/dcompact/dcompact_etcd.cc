@@ -693,6 +693,8 @@ try
 #ifdef NDEBUG
   } catch (const std::exception& ex) {
     TERARK_DIE_S("file = %s, exception: %s", params_fname, ex);
+  } catch (const Status& s) {
+    TERARK_DIE_S("file = %s, Status: %s", params_fname, s.ToString());
   } catch (...) {
     TERARK_DIE_S("file = %s, exception: unknown", params_fname);
   }
