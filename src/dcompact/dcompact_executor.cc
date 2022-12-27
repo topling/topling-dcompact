@@ -678,4 +678,29 @@ std::string CatAttempt(const std::string& path, const DcompactMeta& meta) {
   return CatAttempt(path, meta.attempt);
 }
 
+void JS_ToplingDcompact_AddVersion(json& djs, bool html) {
+  auto& ver = djs["topling-dcompact"];
+  const char* git_ver = git_version_hash_info_topling_dcompact();
+  if (html) {
+    std::string git_sha_beg = HtmlEscapeMin(strstr(git_ver, "commit ") + strlen("commit "));
+    auto headstr = [](const std::string& s, auto pos) {
+      return terark::fstring(s.data(), pos - s.begin());
+    };
+    auto tailstr = [](const std::string& s, auto pos) {
+      return terark::fstring(&*pos, s.end() - pos);
+    };
+    auto git_sha_end = std::find_if(git_sha_beg.begin(), git_sha_beg.end(), &isspace);
+    terark::string_appender<> oss_rocks;
+    oss_rocks|"<pre>"
+             |"<a href='https://github.com/topling/topling-dcompact/commit/"
+             |headstr(git_sha_beg, git_sha_end)|"'>"
+             |headstr(git_sha_beg, git_sha_end)|"</a>"
+             |tailstr(git_sha_beg, git_sha_end)
+             |"</pre>";
+    ver = static_cast<std::string&&>(oss_rocks);
+  } else {
+    ver = git_ver;
+  }
+}
+
 }
