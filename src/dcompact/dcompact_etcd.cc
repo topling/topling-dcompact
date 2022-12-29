@@ -702,7 +702,14 @@ try
   }
   auto t1 = m_env->NowMicros();
   auto s1 = m_env->CreateDir(AddFmt(output_dir, "/att-%02d", m_attempt));
-  TERARK_VERIFY_S(s1.ok(), "%s", s1.ToString());
+  if (f->allow_fallback_to_local) {
+    if (!s1.ok()) {
+      Err("CreateDir(%s/att-%02d) = %s", output_dir, m_attempt, s1.ToString());
+      return s1;
+    }
+  } else {
+    TERARK_VERIFY_S(s1.ok(), "%s", s1.ToString());
+  }
   std::string meta_jstr = meta.ToJsonStr();
   auto t2 = m_env->NowMicros();
   size_t nth_http = as_atomic(f->m_round_robin_idx)

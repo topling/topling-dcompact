@@ -19,6 +19,7 @@
 #include <boost/core/demangle.hpp>
 
 extern const char* rocksdb_build_git_sha;
+const char* git_version_hash_info_topling_dcompact();
 
 namespace ROCKSDB_NAMESPACE {
 
