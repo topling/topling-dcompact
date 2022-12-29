@@ -1250,7 +1250,9 @@ class StatHttpHandler : public CivetHandler {
         ROCKSDB_JSON_SET_PROP(vars, NFS_DYNAMIC_MOUNT);
       }
       vars["MAX_PARALLEL"] = MAX_PARALLEL_COMPACTIONS;
-      vars["Compactions"]["accepting"] = g_jobsAccepting.load(std::memory_order_relaxed);
+      if (verbose >= 3) {
+        vars["Compactions"]["accepting"] = g_jobsAccepting.load(std::memory_order_relaxed);
+      }
       vars["Compactions"]["running"] = g_jobsRunning.load(std::memory_order_relaxed);
       vars["Compactions"]["waiting"] = g_workQueue.peekSize();
     //vars["Compactions"]["accepted"] = g_acceptedJobs.peekSize();
