@@ -180,6 +180,7 @@ Bind_CreatePluginTpl(Ptr& ptr, const CompactionParams& params) {
   };
 }
 
+static std::atomic_long g_jobsAccepting{0};
 static std::atomic_long g_jobsRunning{0};
 static std::atomic_long g_jobsFinished{0};
 static std::atomic_long g_jobsRejected{0};
@@ -1249,6 +1250,7 @@ class StatHttpHandler : public CivetHandler {
         ROCKSDB_JSON_SET_PROP(vars, NFS_DYNAMIC_MOUNT);
       }
       vars["MAX_PARALLEL"] = MAX_PARALLEL_COMPACTIONS;
+      vars["Compactions"]["accepting"] = g_jobsAccepting.load(std::memory_order_relaxed);
       vars["Compactions"]["running"] = g_jobsRunning.load(std::memory_order_relaxed);
       vars["Compactions"]["waiting"] = g_workQueue.peekSize();
     //vars["Compactions"]["accepted"] = g_acceptedJobs.peekSize();
@@ -1546,6 +1548,8 @@ static void RunOneJob(const DcompactMeta& meta, mg_connection* conn) noexcept {
     HttpErr(503, "%s : server busy, running jobs = %ld, waiting = %zd", attempt_dir, running, waiting);
     return;
   }
+  g_jobsAccepting.fetch_add(1, std::memory_order_relaxed);
+  TERARK_SCOPE_EXIT(g_jobsAccepting.fetch_sub(1, std::memory_order_relaxed));
   auto t1 = pf.now();
   size_t lru_handle = size_t(-1);
   if (NFS_DYNAMIC_MOUNT) {
