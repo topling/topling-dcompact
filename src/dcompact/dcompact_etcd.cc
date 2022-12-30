@@ -444,6 +444,7 @@ class DcompactEtcdExecFactory : public CompactExecFactoryCommon {
   float timeout_multiplier = 10.0;
   int http_max_retry = 3;
   int http_timeout = 30; // in seconds
+  int overall_timeout = 5; // in seconds
   int retry_sleep_time = 1; // in seconds
   std::unique_ptr<DcompactFeeConfig> fee_conf;
 
@@ -539,6 +540,7 @@ class DcompactEtcdExecFactory : public CompactExecFactoryCommon {
     ROCKSDB_JSON_SET_PROP(djs, timeout_multiplier);
     djs["stat"] = m_stat_map.ToJson(html);
     ROCKSDB_JSON_SET_PROP(djs, etcd_root);
+    ROCKSDB_JSON_SET_PROP(djs, overall_timeout);
     ROCKSDB_JSON_SET_PROP(djs, http_timeout);
     ROCKSDB_JSON_SET_PROP(djs, http_max_retry);
     ROCKSDB_JSON_SET_PROP(djs, max_book_dbcf);
@@ -567,6 +569,7 @@ class DcompactEtcdExecFactory : public CompactExecFactoryCommon {
   void Update(const json& js) final {
     ROCKSDB_JSON_OPT_PROP(js, timeout_multiplier);
     ROCKSDB_JSON_OPT_SIZE(js, estimate_speed);
+    ROCKSDB_JSON_OPT_PROP(js, overall_timeout);
     ROCKSDB_JSON_OPT_PROP(js, http_timeout);
     ROCKSDB_JSON_OPT_PROP(js, http_max_retry);
     ROCKSDB_JSON_OPT_PROP(js, max_book_dbcf);
@@ -783,9 +786,10 @@ try
     SizeToString(m_input_raw_key_bytes + m_input_raw_val_bytes).c_str());
   double speed = f->rt_estimate_speed_mb(m_stat_idx);
   size_t estimate_time_us = (size_t)ceil(input_raw_bytes() / speed);
-  size_t timeout_us = std::max(
+  size_t timeout_us = std::max({
           size_t(f->timeout_multiplier * estimate_time_us),
-          size_t(f->http_timeout)*1000*1000);
+          size_t(f->http_timeout)*1000*1000,
+          size_t(f->overall_timeout)*1000*1000});
   const std::atomic<bool>  shutting_down_always_false{false};
   const std::atomic<bool>* shutting_down = params.shutting_down;
   if (!shutting_down) {
