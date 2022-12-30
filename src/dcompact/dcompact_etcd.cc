@@ -443,7 +443,7 @@ class DcompactEtcdExecFactory : public CompactExecFactoryCommon {
   size_t max_book_dbcf = 20;
   float timeout_multiplier = 10.0;
   int http_max_retry = 3;
-  int http_timeout = 30; // in seconds
+  int http_timeout = 3; // in seconds
   int overall_timeout = 5; // in seconds
   int retry_sleep_time = 1; // in seconds
   std::unique_ptr<DcompactFeeConfig> fee_conf;

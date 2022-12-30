@@ -48,17 +48,18 @@
 
 在这里，`CompactionExecutorFactory` 是 C++ 的接口，在 json 中是一个 namespace，在这个 namespace 中，定义了一个 varname 为 `dcompact`，类名为 `DcompactEtcd` 的（实现了 `CompactionExecutorFactory` 接口）的对象，该对象使用 `params` 进行构造。params 解释说明如下：
 
-属性名 | 解释说明
--------|----------
-`allow_fallback_to_local`| 如果分布式 Compact 失败，是否允许回退到本地 Compact
-`hoster_root` | 该 db 的根目录，一般设置为与 DB::Open 中的 `path` 变量相同。
-`instance_name` | 该 db 实例名，在多租户场景下，CompactWorker 结点使用 instance\_name 区分不同的 db 实例
-`nfs_mnt_src`   | NFS 挂载源
-`nfs_mnt_opt`   | NFS 挂载选项
-`http_max_retry` | 最大重试次数
-`http_timeout` | http 连接的超时时间，一般情况下，超时即意味着出错
-`http_workers` | 多个 http url, 以 `//` 开头的会被跳过，相当于是被注释掉了<br/> 末尾的 `//end_http_workers` 是为了 `start_workers.sh` 脚本服务的，不能删除
-`dcompact_min_level` | 只有在 Compact Output Level 大于等于该值时，才使用分布式 compact，小于该值时使用本地 compact
+属性名 | 默认值 | 解释说明
+-------|------|---
+`allow_fallback_to_local`| false | 如果分布式 Compact 失败，是否允许回退到本地 Compact
+`hoster_root` | 空 | 该 db 的根目录，一般设置为与 DB::Open 中的 `path` 变量相同。
+`instance_name` | 空 | 该 db 实例名，在多租户场景下，CompactWorker 结点使用 instance\_name 区分不同的 db 实例
+`nfs_mnt_src`   | 空 | NFS 挂载源
+`nfs_mnt_opt`   | 空 | NFS 挂载选项
+`http_max_retry` | 3 | 最大重试次数
+`overall_timeout` | 5 | 单位秒，单个分布式 Compact 任务的单次执行尝试(attempt)从头至尾耗时的超时时间
+`http_timeout` | 3 | 单位秒，http 连接的超时时间，一般情况下，超时即意味着出错
+`http_workers` | 空 | 多个（至少一个）http url, 以 `//` 开头的会被跳过，相当于是被注释掉了<br/> 末尾的 `//end_http_workers` 是为了 `start_workers.sh` 脚本服务的，不能删除
+`dcompact_min_level` | 2 | 只有在 Compact Output Level 大于等于该值时，才使用分布式 compact，小于该值时使用本地 compact
 
 属性名 | 解释说明（ETCD 相关配置，已经过时无用）
 -------|----------
