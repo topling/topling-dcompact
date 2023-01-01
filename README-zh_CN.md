@@ -138,7 +138,7 @@ ETCD\_KEY      | 空 | YES | 指定 key 文件路径，与 ca 一起使用时，
 
 在公有云上，[MyTopling](https://topling.cn/products/mytopling) 和 [Todis](https://topling.cn/products/todis-enterprise) 的分布式 Compact 就是通过这样的 Serverless 服务实现的。
 
-在这种配置中，就需要使用 dcompact_worker 的自动 mount 能力，DB 的 instance_name, nfs_mnt_src, nfs_mnt_opt 就是为了实现这个需求，DB 通过 HTTP 请求将包含这些信息的 compact 请求发送给反向代理，反向代理再根据权重等代理策略选择一个后端 dcompact_worker 结点，将请求转发过去，DB 根据需要 mount 相应的 NFS，然后执行 compact 任务：从 NFS 上读取输入，将输出写回 NFS。
+在这种配置中，需要使用 dcompact_worker 的自动 mount 能力，DB 的 instance_name, nfs_mnt_src, nfs_mnt_opt 就是为了实现这个需求，DB 通过 HTTP 请求将包含这些信息的 compact 请求发送给反向代理，反向代理再根据权重等代理策略选择一个后端 dcompact_worker 结点，将请求转发过去，DB 根据需要 mount 相应的 NFS，然后执行 compact 任务：从 NFS 上读取输入，将输出写回 NFS。
 
 以这样的方式，如果 DB 的结点或流量有增减，后端 dcompact_worker 的机器负载就会相应增减，进而弹性伸缩组就自动增减结点，将机器负载保持在一个合理范围内，既提供足够的算力，又不浪费资源。
 
