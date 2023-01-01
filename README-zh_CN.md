@@ -80,7 +80,7 @@ web_url | 在浏览器中通过 stat 查看状态，以及查看 log 文件
 
 ## 2. dcompact worker
 
-### 2.1 dcompact 作为服务
+### 2.1. dcompact 作为服务
 
 当 MAX\_PARALLEL\_COMPACTIONS &gt; 0 时，在此模式下运行。
 
@@ -133,4 +133,13 @@ ETCD\_CA       | 空 | YES | 指定 ca 文件路径，使用 {ca, cert, key} 链
 ETCD\_CERT     | 空 | YES | 指定 cert 文件路径，与 ca 一起使用时，也可以为空
 ETCD\_KEY      | 空 | YES | 指定 key 文件路径，与 ca 一起使用时，也可以为空
 
+## 3. Serverless 分布式 Compact
+分布式 Compact 可以部署在一个弹性伸缩组（可弹性伸缩的集群）中，挂在一个反向代理后面，该反向代理对外暴露 HTTP 服务，从而该 HTTP 服务本质上就是一个 Serverless 服务。
 
+在公有云上，[MyTopling](https://topling.cn/products/mytopling) 和 [Todis](https://topling.cn/products/todis-enterprise) 的分布式 Compact 就是通过这样的 Serverless 服务实现的。
+
+在这种配置中，就需要使用 dcompact_worker 的自动 mount 能力，DB 的 instance_name, nfs_mnt_src, nfs_mnt_opt 就是为了实现这个需求，DB 通过 HTTP 请求将包含这些信息的 compact 请求发送给反向代理，反向代理再根据权重等代理策略选择一个后端 dcompact_worker 结点，将请求转发过去，DB 根据需要 mount 相应的 NFS，然后执行 compact 任务：从 NFS 上读取输入，将输出写回 NFS。
+
+以这样的方式，如果 DB 的结点或流量有增减，后端 dcompact_worker 的机器负载就会相应增减，进而弹性伸缩组就自动增减结点，将机器负载保持在一个合理范围内，既提供足够的算力，又不浪费资源。
+
+在公有云上，不同账号之间的内网是互相隔离的，要通过内网访问 NFS，就需要将不同账号的内网打通，各个公有云对这个需求都有相应的支持。
