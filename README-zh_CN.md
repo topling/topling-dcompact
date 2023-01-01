@@ -8,7 +8,6 @@
 2. 运行 dcompact\_worker 的一方称为 Worker，在 Server/Client 模型中，是 Server
 3. 同一个 worker 可以同时为多个 hoster 服务，同一个 hoster 也可以把自己的 compact 任务发给多个 worker 执行
 4. 编译 ToplingDB 时，本模块(topling-dcompact)由 ToplingDB 的 Makefile 中从 github 自动 clone 下来
-5. 编译 ToplingDB 完成之后，编译出来的 dcompact\_worker 二进制程序位于 `/path/to/toplingdb/sideplugin/topling-dcompact/tools/dcompact/build/Linux-*/*/dcompact_worker.exe`
 
 除了 ToplingDB 的动态库之外，dcompact\_worker.exe 还依赖 libcurl，在此之外，对于用户自定义的插件，例如 MergeOperator, CompactionFilter 等，运行 dcompact\_worker 时需要通过 LD\_PRELOAD 加载相应的动态库。
 
