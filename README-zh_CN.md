@@ -11,7 +11,7 @@
 
 除了 ToplingDB 的动态库之外，dcompact\_worker.exe 还依赖 libcurl，在此之外，对于用户自定义的插件，例如 MergeOperator, CompactionFilter 等，运行 dcompact\_worker 时需要通过 LD\_PRELOAD 加载相应的动态库。使用这种方式，相同进程可以加载多个不同的动态库，从而为多个不同的 DB 提供 compact 服务，例如 [MyTopling](https://github.com/topling/mytopling) 和 [Todis](https://github.com/topling/todis) 就使用这种方式共享相同的 dcompact\_worker 进程。
 
-> 分布式 Compact 的实现类名是 DcompactEtcd，这是因为 ToplingDB 分布式 Compact 最初是通过 etcd-cpp-api 使用 etcd 用作 Hoster 与 Worker 的交互，后来因为 etcd-cpp-api 的 [bug #78](https://github.com/etcd-cpp-apiv3/etcd-cpp-apiv3/issues/78) 而不得不弃用 etcd。目前 etcd 相关参数已经无用。
+> 分布式 Compact 的实现类名是 DcompactEtcd，这是因为 ToplingDB 分布式 Compact 最初是通过 etcd-cpp-api 使用 etcd 用作 Hoster 与 Worker 的交互，后来因为 etcd-cpp-api 的 [bug #78](https://github.com/etcd-cpp-apiv3/etcd-cpp-apiv3/issues/78) 而不得不弃用 etcd。目前 etcd 相关代码已经无用，仅有 DcompactEtcd 作为类名保留下来。
 
 
 ## 1. json 配置
