@@ -84,26 +84,27 @@ web_url | 在浏览器中通过 stat 查看状态，以及查看 log 文件
 当 MAX\_PARALLEL\_COMPACTIONS &gt; 0 时，在此模式下运行。
 
 ```bash
-export  WORKER_DB_ROOT=/tmp
-export  WORKER_DB_ROOT=/dev/shm
-rm -rf $WORKER_DB_ROOT/db1/* # db1 is test db instance_name
-rm -rf /dev/shm/Terark-*
-ulimit -n 100000
+export MAX_PARALLEL_COMPACTIONS=16
+export NFS_DYNAMIC_MOUNT=0
+export NFS_MOUNT_ROOT=/nvme-shared
+export WORKER_DB_ROOT=/tmp
+rm -rf $WORKER_DB_ROOT/db-instance-name-1
+
+# Only for ToplingZipTable
+export ZIP_SERVER_OPTIONS="listening_ports=8090:num_threads=32"
+
 # ToplingZipTable_XXX can be override here by env, which will
 # override the values defined in db Hoster side's json config.
-#
 # Hoster side's json config will pass to compact worker through
 # rpc, then it may be override by env defined here!
-#
-env ETCD_URL=192.168.100.100:2379 \
-    NFS_DYNAMIC_MOUNT=0 \
-    NFS_MOUNT_ROOT=/nvme-shared \
-    MAX_PARALLEL_COMPACTIONS=16 \
-    DictZipBlobStore_zipThreads=16 \
-    ToplingZipTable_nltBuildThreads=16 \
-    ToplingZipTable_localTempDir=/dev/shm \
-    ToplingZipTable_warmupLevel=kValue \
-    $dbg ./dcompact_worker.exe -D listening_ports=8080
+export ToplingZipTable_nltBuildThreads=5
+export ToplingZipTable_localTempDir=/dev/shm
+export ToplingZipTable_warmupLevel=kValue
+export DictZipBlobStore_zipThreads=16
+rm /tmp/Terark-* # clean garbage files in previous run
+
+ulimit -n 100000
+./dcompact_worker.exe -D listening_ports=8080
 ```
 
 以该脚本为例，该脚本在当前节点上启动 dcompact\_worker，其中几个环境变量说明如下：
@@ -118,7 +119,7 @@ MAX\_PARALLEL\_COMPACTIONS | 该 dcompact\_worker 进程可以同时执行多少
 ADVERTISE\_ADDR | 该参数会通过 dcompact 请求的 response 返回给 Hoster, 从而在 Hoster 的 dcompact worker web view 中展示在链接 url 中，这是为了适配反向代理，使得我们可以在公网环境下查看内网的 dcompact\_worker 的 web view
 WEB\_DOMAIN | 用于 dcompact worker web view iframe 的自适应高度
 MULTI\_PROCESS | 如果使用 ToplingDB 的程序及其 CompactionFilter/EventHandler 等插件使用了全局变量，就无法在同一个进程中执行来自多个 DB 实例的 Compact 任务，此时，将 MULTI\_PROCESS 设为 true 可以通过多进程的方式运行 Compact
-ZIP\_SERVER\_OPTIONS | 当 MULTI\_PROCESS 为 true 时，设置 ZipServer 的 http 参数，例如：<br/>`export ZIP_SERVER_OPTIONS=listening_ports=8090:num_threads=32`
+ZIP\_SERVER\_OPTIONS | ToplingZipTable 环境变量，当 MULTI\_PROCESS 为 true 时，设置 ZipServer 的 http 参数，例如：<br/>`export ZIP_SERVER_OPTIONS=listening_ports=8090:num_threads=32`
 
 注意：对于同一个 hoster 实例，该 hoster 上的 db 数据的路径和 worker 上访问该 hoster 的 db 数据的路径一般是不同的。因为两者的 mount path 很难达成一致，所以，worker 上的环境变量 NFS\_MOUNT\_ROOT 和 hoster 上的 json 变量 `hoster_root` 及 `instance_name` 共同协作，完成这个路径的映射关系。
 
