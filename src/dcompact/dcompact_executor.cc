@@ -84,6 +84,13 @@ DATA_IO_DUMP_RAW_MEM_E(InfoLogLevel)
 DATA_IO_LOAD_SAVE_E(DbPath, & path & target_size)
 DATA_IO_LOAD_SAVE_E(FileDescriptor, & packed_number_and_path_id & file_size
                   & smallest_seqno & largest_seqno)
+
+#if (ROCKSDB_MAJOR * 10000 + ROCKSDB_MINOR * 10 + ROCKSDB_PATCH) >= 70100
+  #define FileMetaData_v70100  & epoch_number & unique_id[0] & unique_id[1]
+#else
+  #define FileMetaData_v70100
+#endif
+
 DATA_IO_LOAD_SAVE_E(FileMetaData, & fd & smallest & largest & stats
                   & compensated_file_size
                   & num_entries & num_deletions
@@ -93,6 +100,7 @@ DATA_IO_LOAD_SAVE_E(FileMetaData, & fd & smallest & largest & stats
                   & marked_for_compaction & oldest_blob_file_number
                   & oldest_ancester_time & file_creation_time
                   & file_checksum & file_checksum_func_name
+                  FileMetaData_v70100
                   )
 using terark::pass_by_value;
 struct FileMetaDataVec_1P { const std::vector<FileMetaData*>* val; };
