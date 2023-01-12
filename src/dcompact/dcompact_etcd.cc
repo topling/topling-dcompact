@@ -631,8 +631,8 @@ Done:
   f->m_stat_map.m_mtx.unlock();
   return s;
 }
-template<class T, class U>
-T lim(T x, U lo, U hi) {
+template<class T, class U, class W>
+T lim(T x, U lo, W hi) {
   if (x < lo) return lo;
   if (hi < x) return hi;
   return x;
@@ -796,9 +796,12 @@ try
     shutting_down = &shutting_down_always_false;
   }
   auto t5 = m_env->NowMicros();
-  auto first_sleep = lim(estimate_time_us/4, 200000u, 5000000u); // [0.2,5]sec
+  size_t done_probe_fail_num = 0;
+  size_t done_probe_fail_max = 5;
+  auto min_sleep = f->overall_timeout * 1000000 / done_probe_fail_max;
+  auto first_sleep = lim(estimate_time_us/4, min_sleep, 5000000u);
   std::this_thread::sleep_for(microseconds(first_sleep));
-  auto one_timeout = microseconds(lim(estimate_time_us/16, 50000u, 2000000u));
+  auto one_timeout = microseconds(lim(estimate_time_us/16, min_sleep, 2000000u));
 #ifdef TOPLING_DCOMPACT_USE_ETCD
   if (pEtcd) {
     size_t etcd_estimate_timeout_us = estimate_time_us * 5 / 4;
@@ -816,8 +819,6 @@ try
 #endif
   std::string compact_done_file = output_dir + "/compact.done";
   FileStream compact_done_fp;
-  size_t done_probe_fail_num = 0;
-  size_t done_probe_fail_max = 5;
   while (!(done || shutting_down->load(std::memory_order_relaxed))) {
     t5 = m_env->NowMicros();
     s = SubmitHttp("/probe", meta_jstr, nth_http);
