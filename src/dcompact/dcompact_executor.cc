@@ -640,7 +640,7 @@ void DcompactMeta::FromJsonObj(const json& js) {
   ROCKSDB_JSON_OPT_PROP(js, n_prop_coll_factory);
   ROCKSDB_JSON_REQ_PROP(js, rocksdb_src_version);
   ROCKSDB_JSON_REQ_PROP(js, rocksdb_src_githash);
-  ROCKSDB_JSON_REQ_PROP(js, etcd_root);
+//ROCKSDB_JSON_REQ_PROP(js, etcd_root);
   ROCKSDB_JSON_REQ_PROP(js, hoster_root);
   ROCKSDB_JSON_REQ_PROP(js, output_root);
   ROCKSDB_JSON_REQ_PROP(js, nfs_mnt_src);
@@ -663,7 +663,7 @@ json DcompactMeta::ToJsonObj() const {
     ROCKSDB_JSON_SET_PROP(js, n_prop_coll_factory);
   ROCKSDB_JSON_SET_PROP(js, rocksdb_src_version);
   ROCKSDB_JSON_SET_PROP(js, rocksdb_src_githash);
-  ROCKSDB_JSON_SET_PROP(js, etcd_root);
+//ROCKSDB_JSON_SET_PROP(js, etcd_root);
   ROCKSDB_JSON_SET_PROP(js, hoster_root);
   ROCKSDB_JSON_SET_PROP(js, output_root);
   ROCKSDB_JSON_SET_PROP(js, nfs_mnt_src);

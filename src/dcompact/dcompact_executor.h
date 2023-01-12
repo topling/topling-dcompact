@@ -57,7 +57,7 @@ struct DcompactMeta {
   uint16_t    n_prop_coll_factory = 0;
   uint32_t    rocksdb_src_version = 0;
   std::string rocksdb_src_githash;
-  std::string etcd_root;
+//std::string etcd_root;
   std::string hoster_root;
   std::string output_root; // output_dir = "output_root/${job_id}"
   std::string nfs_mnt_src;
