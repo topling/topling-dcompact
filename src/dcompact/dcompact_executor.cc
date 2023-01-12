@@ -396,8 +396,11 @@ void CompactExecCommon::SetParams(CompactionParams* params, const Compaction* c)
     params->p_html_user_key_coder = dynamic_cast<UserKeyCoder*>(coder);
     TERARK_VERIFY(nullptr != params->p_html_user_key_coder);
   }
+  auto githash = strchr(rocksdb_build_git_sha, ':');
+  ROCKSDB_VERIFY(nullptr != githash);
+  githash++; // skip the ':'
   params->rocksdb_src_version = ROCKSDB_VERSION;
-  params->rocksdb_src_githash = rocksdb_build_git_sha;
+  params->rocksdb_src_githash = githash;
   if (NUM_INFO_LOG_LEVELS == m_factory->info_log_level)
     params->compaction_log_level = imm_cfo.info_log_level;
   else

@@ -1142,8 +1142,11 @@ class BasePostHttpHandler : public CivetHandler {
         HttpErr(412, "ROCKSDB_VERSION Error: my = %d, req = %d", ROCKSDB_VERSION, meta.rocksdb_src_version);
         return true;
       }
-      if (CHECK_CODE_REVISION >= 2 && meta.rocksdb_src_githash != rocksdb_build_git_sha) {
-        HttpErr(412, "rocksdb_githash Error: my = %s, req = %s", rocksdb_build_git_sha, meta.rocksdb_src_githash);
+      auto githash = strchr(rocksdb_build_git_sha, ':');
+      ROCKSDB_VERIFY(nullptr != githash);
+      githash++; // skip the ':'
+      if (CHECK_CODE_REVISION >= 2 && meta.rocksdb_src_githash != githash) {
+        HttpErr(412, "rocksdb_githash Error: my = %s, req = %s", githash, meta.rocksdb_src_githash);
         return true;
       }
       doIt(meta, conn); // will not throw
