@@ -911,6 +911,7 @@ int RunCompact(FILE* in, FILE* out) const {
       true, // l0_files_might_overlap
     #endif
       params.compaction_reason);
+  compaction.set_bottommost_level(params.bottommost_level);
   compaction.SetInputVersion(cfd->current());
 //----------------------------------------------------------------------------
   LogBuffer log_buffer(imm_dbo.info_log_level, imm_dbo.info_log.get());
