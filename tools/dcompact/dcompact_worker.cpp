@@ -759,9 +759,9 @@ int RunCompact(FILE* in, FILE* out) const {
   for (size_t i = 0; i < n_tbl_prop_coll; i++) {
     MyCreatePlugin1(cfo, table_properties_collector_factories[i]);
   }
-  DEBG("Beg SerDeRead: job-%03d/att-%02d", m_meta.job_id, m_meta.attempt);
+  DEBG("Beg SerDeRead: %s", attempt_dir);
   SerDeRead(in, &params);
-  DEBG("End SerDeRead: job-%03d/att-%02d", m_meta.job_id, m_meta.attempt);
+  DEBG("End SerDeRead: %s", attempt_dir);
   if (!params.full_history_ts_low.empty()) {
     VERIFY_EQ(cfo.comparator->timestamp_size(),
                      params.full_history_ts_low.size());
@@ -911,6 +911,8 @@ int RunCompact(FILE* in, FILE* out) const {
       true, // l0_files_might_overlap
     #endif
       params.compaction_reason);
+  INFO("%s: bottommost_level: fake = %d, rpc = %d", attempt_dir,
+       compaction.bottommost_level(), params.bottommost_level);
   compaction.set_bottommost_level(params.bottommost_level);
   compaction.SetInputVersion(cfd->current());
 //----------------------------------------------------------------------------
