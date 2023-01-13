@@ -7,11 +7,11 @@ In the implementation of Distributed Compaction:
 1. Who runs ToplingDB/RocksDB is called Hoster, as Client in the Server/Client model.
 2. Who runs dcompact\_worker is called Worker, as Server in the Server/Client model.
 3. One worker can serve multiple hosters at the same time, and one hoster can also send its compact tasks to multiple workers for executing.
-4. When compiling ToplingDB, this module (topling-dcompact) is automatically cloned from GitHub by ToplingDB's Makefile.
+4. When compiling ToplingDB, this module (topling-dcompact) is automatically cloned from github by ToplingDB's Makefile.
 
 In addition to the dynamic library of ToplingDB, dcompact\_worker.exe also depends on libcurl. In addition, for user-defined plugins, such as MergeOperator, CompactionFilter, etc., the corresponding dynamic library needs to be loaded through LD\_PRELOAD when running dcompact\_worker. In this way, the same process can load multiple different dynamic libraries to provide compact services for multiple different DBs. For example, [MyTopling](https://github.com/topling/mytopling) and [Todis](https://github.com/topling/todis) use this method to share the same dcompact\_worker process.
 
-> The implementation class name of Distributed Compaction is DcompactEtcd, because ToplingDB Distributed Compaction originally used etcd through etcd-cpp-api for the interaction between Hoster and Worker. But etcd had to be abandoned because of [bug #78](https://github.com/etcd-cpp-apiv3/etcd-cpp-apiv3/issues/78) of etcd-cpp-api. Currently etcd-related code is useless, only DcompactEtcd is reserved as the class name.
+> The concrete class name of Distributed Compaction is DcompactEtcd, because ToplingDB Distributed Compaction originally used etcd through etcd-cpp-api for the interaction between Hoster and Worker. But etcd had to be abandoned because of [bug #78](https://github.com/etcd-cpp-apiv3/etcd-cpp-apiv3/issues/78) of etcd-cpp-api. Currently etcd-related code is useless, only DcompactEtcd is reserved as the class name.
 
 ## 1. json configuration
 
