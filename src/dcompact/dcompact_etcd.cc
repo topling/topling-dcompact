@@ -574,6 +574,7 @@ class DcompactEtcdExecFactory : public CompactExecFactoryCommon {
     ROCKSDB_JSON_OPT_PROP(js, http_max_retry);
     ROCKSDB_JSON_OPT_PROP(js, max_book_dbcf);
     ROCKSDB_JSON_OPT_PROP(js, retry_sleep_time);
+    maximize(overall_timeout, http_timeout);
   }
 };
 
