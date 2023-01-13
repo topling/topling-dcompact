@@ -1,5 +1,7 @@
 # 分布式 Compact
+### [English Version](README.md)
 
+## 概述
 在 [ToplingDB](https://github.com/topling/toplingdb) 中，dcompact(Distributed Compaction) 在形式上是作为一个 [SidePlugin](https://github.com/topling/rockside/wiki) 实现的，也就是说，要使用分布式 Compact，用户代码不需要任何修改，只需要改 json/yaml 配置文件。
 
 在分布式 Compact 的实现中：
@@ -28,7 +30,7 @@
         "nfs_mnt_src": ":/nvmepool/shared",
         "nfs_mnt_opt": "nolock,addr=192.168.31.16",
         "http_max_retry": 3,
-        "http_timeout": 30,
+        "http_timeout": 1,
         "http_workers": [
           "http://active-host:8080",
           { "url": "http://worker.for.submit.compact.job",
