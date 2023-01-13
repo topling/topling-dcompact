@@ -1,21 +1,21 @@
-# Distributed Compact
+# Distributed Compaction
 
-In [ToplingDB](https://github.com/topling/toplingdb), dcompact (Distributed Compaction) is formally implemented as a [SidePlugin](https://github.com/topling/rockside/wiki). That is to say, to use distributed compact, the user code does not need any modification, only the json/yaml configuration file needs to be changed.
+In [ToplingDB](https://github.com/topling/toplingdb), dcompact (Distributed Compaction) is formally implemented as a [SidePlugin](https://github.com/topling/rockside/wiki). That is to say, to use Distributed Compaction, the user code does not need any modification, only the json/yaml configuration file needs to be changed.
 
-In the implementation of Distributed Compact:
+In the implementation of Distributed Compaction:
 
 1. Who runs ToplingDB/RocksDB is called Hoster, as Client in the Server/Client model.
 2. Who runs dcompact\_worker is called Worker, as Server in the Server/Client model.
 3. One worker can serve multiple hosters at the same time, and one hoster can also send its compact tasks to multiple workers for executing.
-4. When compiling ToplingDB, this module (topling-dcompact) is automatically cloned from github by ToplingDB's Makefile.
+4. When compiling ToplingDB, this module (topling-dcompact) is automatically cloned from GitHub by ToplingDB's Makefile.
 
 In addition to the dynamic library of ToplingDB, dcompact\_worker.exe also depends on libcurl. In addition, for user-defined plugins, such as MergeOperator, CompactionFilter, etc., the corresponding dynamic library needs to be loaded through LD\_PRELOAD when running dcompact\_worker. In this way, the same process can load multiple different dynamic libraries to provide compact services for multiple different DBs. For example, [MyTopling](https://github.com/topling/mytopling) and [Todis](https://github.com/topling/todis) use this method to share the same dcompact\_worker process.
 
-> The implementation class name of Distributed Compact is DcompactEtcd, because ToplingDB Distributed Compact originally used etcd through etcd-cpp-api for the interaction between Hoster and Worker. But etcd had to be abandoned because of [bug #78](https://github.com/etcd-cpp-apiv3/etcd-cpp-apiv3/issues/78) of etcd-cpp-api. Currently etcd-related code is useless, only DcompactEtcd is reserved as the class name.
+> The implementation class name of Distributed Compaction is DcompactEtcd, because ToplingDB Distributed Compaction originally used etcd through etcd-cpp-api for the interaction between Hoster and Worker. But etcd had to be abandoned because of [bug #78](https://github.com/etcd-cpp-apiv3/etcd-cpp-apiv3/issues/78) of etcd-cpp-api. Currently etcd-related code is useless, only DcompactEtcd is reserved as the class name.
 
 ## 1. json configuration
 
-Distributed Compact is configured in the json configuration file:
+Distributed Compaction is configured in the json configuration file:
 ```json
   "CompactionExecutorFactory": {
     "dcompact": {
@@ -47,16 +47,16 @@ Here, `CompactionExecutorFactory` is a C++ interface, which is a namespace in js
 
 property name | default value | explanation
 -------|------|---
-`allow_fallback_to_local`| false | Whether to allow fallback to local compact if distributed compact fails
+`allow_fallback_to_local`| false | Whether to allow fallback to local compact if Distributed Compaction fails
 `hoster_root` | null | The root directory of the db, generally set the same as the `path` variable in DB::Open.
 `instance_name` | null | The db instance name, in a multi-tenant scenario, the CompactWorker node uses instance\_name to distinguish different db instances
 `nfs_mnt_src`   | null | NFS mount source
 `nfs_mnt_opt`   | null | NFS mount options
 `http_max_retry` | 3 | Maximum number of retries
-`overall_timeout` | 5 | In seconds, the time-out time for a single execution attempt of a single distributed Compact task from start to finish
+`overall_timeout` | 5 | In seconds, the time-out time for a single execution attempt of a single Distributed Compaction task from start to finish
 `http_timeout` | 3 | In seconds, the timeout time of the http connection. Under normal circumstances, timeout means an error
 `http_workers` | null | Multiple (at least one) http urls. Those starting with `//` will be skipped, equivalent to being commented out<br/>`//end_http_workers` at the end is for the `start_workers.sh` script and cannot be deleted
-`dcompact_min_level` | 2 | Distributed compact is used only when the Compact Output Level is greater than or equal to this value, and local compact is used when it is smaller than this value
+`dcompact_min_level` | 2 | Distributed Compaction is used only when the Compact Output Level is greater than or equal to this value, and local compact is used when it is smaller than this value
 
 ### 1.1 http_workers
 
@@ -114,11 +114,11 @@ ZIP\_SERVER\_OPTIONS | ToplingZipTable environment variable. when MULTI_PROCESS 
 
 Note: For the same hoster instance, the path of the db data on the hoster and the path of accessing the db data of the hoster on the worker are generally different. Because it is difficult to agree on the mount path between the two, the environment variable NFS_MOUNT_ROOT on the worker and the json variables `hoster_root` and `instance_name` on the hoster work together to complete the mapping relationship of this path.
 
-## 3. Serverless Distributed Compact
+## 3. Serverless Distributed Compaction
 
-Distributed Compact can be deployed in an auto-scaling group (an auto-scaling cluster) and hung behind a reverse proxy that exposes the HTTP service to the outside, so that the HTTP service is essentially a serverless service.
+Distributed Compaction can be deployed in an auto-scaling group (an auto-scaling cluster) and hung behind a reverse proxy that exposes the HTTP service to the outside, so that the HTTP service is essentially a serverless service.
 
-On the public cloud, the distributed compact of [MyTopling](https://topling.cn/products/mytopling) and [Todis](https://topling.cn/products/todis-enterprise) is realized through such serverless services.
+On the public cloud, the Distributed Compaction of [MyTopling](https://topling.cn/products/mytopling) and [Todis](https://topling.cn/products/todis-enterprise) is realized through such serverless services.
 
 In this configuration, the automatic mount capability of dcompact\_worker needs to be used. The instance\_name, nfs\_mnt\_src, and nfs\_mnt\_opt of DB are used to realize this requirement. DB sends the compact request containing these information to the reverse proxy through HTTP request, and the reverse proxy then uses the weight Wait for the proxy strategy to select a back-end dcompact\_worker node, and forward the request. dcompact\_worker mounts the corresponding NFS as needed, and then executes the compact task: reading input from NFS, and writing output back to NFS.
 

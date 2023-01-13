@@ -7,7 +7,7 @@
 1. 运行 ToplingDB/RocksDB 的一方称为 Hoster，在 Server/Client 模型中，是 Client
 2. 运行 dcompact\_worker 的一方称为 Worker，在 Server/Client 模型中，是 Server
 3. 同一个 worker 可以同时为多个 hoster 服务，同一个 hoster 也可以把自己的 compact 任务发给多个 worker 执行
-4. 编译 ToplingDB 时，本模块(topling-dcompact)由 ToplingDB 的 Makefile 中从 github 自动 clone 下来
+4. 编译 ToplingDB 时，本模块(topling-dcompact)由 ToplingDB 的 Makefile 中从 GitHub 自动 clone 下来
 
 除了 ToplingDB 的动态库之外，dcompact\_worker.exe 还依赖 libcurl，在此之外，对于用户自定义的插件，例如 MergeOperator, CompactionFilter 等，运行 dcompact\_worker 时需要通过 LD\_PRELOAD 加载相应的动态库。使用这种方式，相同进程可以加载多个不同的动态库，从而为多个不同的 DB 提供 compact 服务，例如 [MyTopling](https://github.com/topling/mytopling) 和 [Todis](https://github.com/topling/todis) 就使用这种方式共享相同的 dcompact\_worker 进程。
 
