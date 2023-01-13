@@ -94,7 +94,7 @@ export ToplingZipTable_nltBuildThreads=5
 export ToplingZipTable_localTempDir=/dev/shm
 export ToplingZipTable_warmupLevel=kValue
 export DictZipBlobStore_zipThreads=16
-rm /tmp/Terark-* # clean garbage files in previous run
+rm -f /tmp/Terark-* # clean garbage files in previous run
 
 ulimit -n 100000
 ./dcompact_worker.exe -D listening_ports=8080
