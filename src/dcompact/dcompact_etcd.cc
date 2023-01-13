@@ -660,8 +660,13 @@ try
   DcompactMeta meta;
   meta.n_listeners = (uint16_t)params.listeners.size();
   meta.n_prop_coll_factory = (uint16_t)params.table_properties_collector_factories.size();
-  meta.rocksdb_src_version = ROCKSDB_VERSION;
-  meta.rocksdb_src_githash = rocksdb_build_git_sha;
+  {
+    auto githash = strchr(rocksdb_build_git_sha, ':');
+    ROCKSDB_VERIFY(nullptr != githash);
+    githash++; // skip the ':'
+    meta.code_githash = githash;
+    meta.code_version = ROCKSDB_VERSION;
+  }
   meta.job_id = params.job_id;
   meta.attempt = m_attempt;
 #ifdef TOPLING_DCOMPACT_USE_ETCD

@@ -205,7 +205,7 @@ DATA_IO_LOAD_SAVE_E(CompactionParams,
                   & compaction_reason
                   & preserve_deletes_seqnum & smallest_seqno
                   & earliest_write_conflict_snapshot & paranoid_file_checks
-                  & rocksdb_src_version & rocksdb_src_githash
+                  & code_version & code_githash
                   & hoster_root & instance_name
                   & dbname & db_id & db_session_id & full_history_ts_low
 
@@ -399,8 +399,8 @@ void CompactExecCommon::SetParams(CompactionParams* params, const Compaction* c)
   auto githash = strchr(rocksdb_build_git_sha, ':');
   ROCKSDB_VERIFY(nullptr != githash);
   githash++; // skip the ':'
-  params->rocksdb_src_version = ROCKSDB_VERSION;
-  params->rocksdb_src_githash = githash;
+  params->code_version = ROCKSDB_VERSION;
+  params->code_githash = githash;
   if (NUM_INFO_LOG_LEVELS == m_factory->info_log_level)
     params->compaction_log_level = imm_cfo.info_log_level;
   else
@@ -641,8 +641,8 @@ void DcompactMeta::FromJsonObj(const json& js) {
   n_prop_coll_factory = 0;
   ROCKSDB_JSON_OPT_PROP(js, n_listeners);
   ROCKSDB_JSON_OPT_PROP(js, n_prop_coll_factory);
-  ROCKSDB_JSON_REQ_PROP(js, rocksdb_src_version);
-  ROCKSDB_JSON_REQ_PROP(js, rocksdb_src_githash);
+  ROCKSDB_JSON_REQ_PROP(js, code_version);
+  ROCKSDB_JSON_REQ_PROP(js, code_githash);
 //ROCKSDB_JSON_REQ_PROP(js, etcd_root);
   ROCKSDB_JSON_REQ_PROP(js, hoster_root);
   ROCKSDB_JSON_REQ_PROP(js, output_root);
@@ -664,8 +664,8 @@ json DcompactMeta::ToJsonObj() const {
     ROCKSDB_JSON_SET_PROP(js, n_listeners);
   if (n_prop_coll_factory)
     ROCKSDB_JSON_SET_PROP(js, n_prop_coll_factory);
-  ROCKSDB_JSON_SET_PROP(js, rocksdb_src_version);
-  ROCKSDB_JSON_SET_PROP(js, rocksdb_src_githash);
+  ROCKSDB_JSON_SET_PROP(js, code_version);
+  ROCKSDB_JSON_SET_PROP(js, code_githash);
 //ROCKSDB_JSON_SET_PROP(js, etcd_root);
   ROCKSDB_JSON_SET_PROP(js, hoster_root);
   ROCKSDB_JSON_SET_PROP(js, output_root);
