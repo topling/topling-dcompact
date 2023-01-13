@@ -100,7 +100,7 @@ ulimit -n 100000
 
 Taking this script as an example, the script starts dcompact\_worker on the current node, and several environment variables are described as follows:
 
-环境变量名 | 解释说明
+environment variable name | explanation
 -----------|---------
 WORKER\_DB\_ROOT | The worker will create a directory for each attempt of each compact job sent by each hoster,<br/>The pseudo metadata and operation logs of the db will be saved in this directory. After the compact is successful, the data in this directory will be useless
 DEL\_WORKER\_TEMP\_DB| Referring to `WORKER_DB_ROOT`, when the corresponding compact is executed, whether to delete the corresponding directory.<br/>While after the execution of compact, the data in the corresponding directory is useless and can be deleted, it can still be retained for subsequent tracking
