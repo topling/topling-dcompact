@@ -47,7 +47,7 @@ Distributed Compaction is configured in the json configuration file:
 
 Here, `CompactionExecutorFactory` is a C++ interface, which is a namespace in json. In this namespace, an object whose varname is `dcompact` and class name is `DcompactEtcd` (implements the `CompactionExecutorFactory` interface) is defined, and the object is constructed with `params`. The params are explained as follows:
 
-property name | default value | explanation
+property name | default value | description
 -------|------|---
 `allow_fallback_to_local`| false | Whether to allow fallback to local compact if Distributed Compaction fails
 `hoster_root` | null | The root directory of the db, generally set the same as the `path` variable in DB::Open.
@@ -66,7 +66,7 @@ In the intranet environment, each worker can be simply configured as a string re
 
 In a public network (such as cloud computing) environment, workers are hidden behind reverse proxy or load balancing, and several configuration fields are added for this:
 
-field name | explanation
+field name | description
 ------|------
 url | Submit a compact job
 base_url | probe to query compact job or shutdown to specify compact job
@@ -104,7 +104,7 @@ Taking this script as an example, the script starts dcompact\_worker on the curr
 
 environment variable name | explanation
 -----------|---------
-WORKER\_DB\_ROOT | The worker will create a directory for each attempt of each compact job sent by each hoster,<br/>The pseudo metadata and operation logs of the db will be saved in this directory. After the compact is successful, the data in this directory will be useless
+WORKER\_DB\_ROOT | The worker will create a directory for each attempt of each compact job sent by each hoster. The pseudo metadata and operation logs of the db will be saved in this directory. After the compaction successed, the data in this directory will be useless
 DEL\_WORKER\_TEMP\_DB| Referring to `WORKER_DB_ROOT`, when the corresponding compact is executed, whether to delete the corresponding directory.<br/>While after the execution of compact, the data in the corresponding directory is useless and can be deleted, it can still be retained for subsequent tracking
 NFS\_DYNAMIC\_MOUNT | 0 means that the system has mounted nfs<br/>1 means the system has not mounted nfs, and the dcompact\_worker process dynamically mounts the nfs specified in the http request
 NFS\_MOUNT\_ROOT | This directory contains multiple Hosters' SST directory, and the directory name is the Instance\_name of each host.<br/>The directory sent by hostter to worker is specified in JSON. The part of the `hoster_root` in the DCOMPACTETCD JSON definition is replaced by `${nfs_mount_root}/instance_name`
