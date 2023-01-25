@@ -8,6 +8,7 @@
 #include <dcompact/dcompact_executor.h>
 #include <db/error_handler.h>
 #include <logging/logging.h>
+#include <options/options_helper.h> // for BuildDBOptions
 #include <rocksdb/merge_operator.h>
 #include <terark/io/FileStream.hpp>
 #include <terark/lru_map.hpp>
@@ -796,6 +797,11 @@ int RunCompact(FILE* in, FILE* out) const {
     TRAC("INFO_LOG_LEVEL: rpc = %s, env_var = %s",
          enum_cstr(params.compaction_log_level), var?var:"undefined");
     imm_dbo.info_log->SetInfoLogLevel(imm_dbo.info_log_level);
+  }
+  {
+    auto dbo = BuildDBOptions(imm_dbo, mut_dbo);
+    auto s = cfo.table_factory->ValidateOptions(dbo, cfo);
+    TERARK_VERIFY_S(s.ok(), "TableFactory.ValidateOptions() = %s", s.ToString());
   }
   BlockCacheTracer* block_cache_tracer = nullptr;
   const std::shared_ptr<IOTracer> io_tracer(nullptr);
