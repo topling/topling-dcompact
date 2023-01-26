@@ -763,6 +763,17 @@ int RunCompact(FILE* in, FILE* out) const {
   DEBG("Beg SerDeRead: %s", attempt_dir);
   SerDeRead(in, &params);
   DEBG("End SerDeRead: %s", attempt_dir);
+
+  // BlockBasedTable use tuple(db_id, db_session_id, orig_file_number) as
+  // BlockCache Key for newly created SST, but SST created by concurrent
+  // dcompact can not ensure orig_file_number is unique as in local compaction,
+  // thus yield dup BlockCache Key which casusing BlockBasedTable goes wrong.
+  //
+  // We have workaround in BlockBasedTable, DO NOT use orig_file_number,
+  // Also we add compaction job_id to db_session_id for double assurance,
+  // Distributed Compaction Job_id-----------vvv
+  as_string_appender(params.db_session_id)|":dcj"|params.job_id;
+
   if (!params.full_history_ts_low.empty()) {
     VERIFY_EQ(cfo.comparator->timestamp_size(),
                      params.full_history_ts_low.size());
