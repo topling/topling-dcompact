@@ -917,7 +917,7 @@ int RunCompact(FILE* in, FILE* out) const {
       true, // l0_files_might_overlap
     #endif
       params.compaction_reason);
-  INFO("%s: bottommost_level: fake = %d, rpc = %d", attempt_dir,
+  DEBG("%s: bottommost_level: fake = %d, rpc = %d", attempt_dir,
        compaction.bottommost_level(), params.bottommost_level);
   compaction.set_bottommost_level(params.bottommost_level);
   compaction.SetInputVersion(cfd->current());
@@ -1218,7 +1218,7 @@ class ProbeCompactHandler : public BasePostHttpHandler {
         "HTTP/1.1 200 OK\r\nContent-Type: text/json\r\n\r\n"
         R"({"status": "NotFound", "addr": "%s"})", ADVERTISE_ADDR.c_str()
       );
-      WARN("probe NotFound: %s", meta.ToJsonStr());
+      DEBG("probe NotFound: %s", meta.ToJsonStr());
     }
   }
 };
@@ -1625,7 +1625,6 @@ static void RunOneJob(const DcompactMeta& meta, mg_connection* conn) noexcept {
         auto info_log = j->m_log.get(); // intentional hide outer info_log
         DEBG("%s: fork to child time = %f sec", attempt_dir, pf.sf(t5, t6));
         run();
-        info_log->Close();
         ::fflush(nullptr); // flush all FILE streams
         TRAC("%s: exiting child process(pid=%d)", attempt_dir, getpid());
       //::exit(0); // will hang in some global destructors
@@ -1647,14 +1646,18 @@ static void RunOneJob(const DcompactMeta& meta, mg_connection* conn) noexcept {
           ERROR("%s: waitpid(pid=%d) = {status = %d, err = %m}", attempt_dir, pid, status);
         } else if (WIFEXITED(status)) {
           DEBG("%s: waitpid(pid=%d) exit with status = %d", attempt_dir, pid, WEXITSTATUS(status));
-        } else if (WCOREDUMP(status)) {
-          DEBG("%s: waitpid(pid=%d) coredump", attempt_dir, pid);
-          DeleteTempFiles(pid);
         } else if (WIFSIGNALED(status)) {
-          DEBG("%s: waitpid(pid=%d) killed by signal %d", attempt_dir, pid, WTERMSIG(status));
-          DeleteTempFiles(pid);
+          if (WCOREDUMP(status))
+            WARN("%s: waitpid(pid=%d) coredump by signal %d", attempt_dir, pid, WTERMSIG(status));
+          else
+            WARN("%s: waitpid(pid=%d) killed by signal %d", attempt_dir, pid, WTERMSIG(status));
+          DeleteTempFiles(pid, info_log);
+        } else if (WIFSTOPPED(status)) {
+          WARN("%s: waitpid(pid=%d) stop signal = %d", attempt_dir, pid, WSTOPSIG(status));
+        } else if (WIFCONTINUED(status)) {
+          WARN("%s: waitpid(pid=%d) continue status = %d(%#X)", attempt_dir, pid, status, status);
         } else {
-          DEBG("%s: waitpid(pid=%d) other status = %d(%#X)", attempt_dir, pid, status, status);
+          WARN("%s: waitpid(pid=%d) other status = %d(%#X)", attempt_dir, pid, status, status);
         }
       }
     }
@@ -1674,20 +1677,19 @@ static void RunOneJob(const DcompactMeta& meta, mg_connection* conn) noexcept {
   });
 }
 
-static void DeleteTempFiles(pid_t pid) {
+static void DeleteTempFiles(pid_t pid, Logger* info_log) {
   const char* tmpdir = getenv("ToplingZipTable_localTempDir");
   TERARK_VERIFY_F(nullptr != tmpdir, "env ToplingZipTable_localTempDir must be defined");
   auto prefix = terark::string_appender<>()|"Topling-"|pid|"-";
   using namespace std::filesystem;
   std::error_code ec;
   directory_iterator dir(tmpdir, ec);
-  TERARK_VERIFY_S(bool(ec), "directory_iterator(%s) = %s", tmpdir, ec.message());
+  TERARK_VERIFY_S(!ec, "directory_iterator(%s) = %s", tmpdir, ec.message());
   for (auto& ent : dir) {
     auto path = ent.path();
     if (path.has_stem()) {
       std::string stem = ent.path().stem().string();
       if (Slice(stem).starts_with(prefix)) {
-        Logger* info_log = nullptr;
         if (std::filesystem::remove(path, ec))
           INFO("remove(%s) = ok", path.string());
         else
