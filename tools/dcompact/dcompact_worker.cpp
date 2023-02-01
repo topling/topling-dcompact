@@ -1645,8 +1645,16 @@ static void RunOneJob(const DcompactMeta& meta, mg_connection* conn) noexcept {
         pid_t wpid = waitpid(pid, &status, 0);
         if (wpid < 0) {
           ERROR("%s: waitpid(pid=%d) = {status = %d, err = %m}", attempt_dir, pid, status);
+        } else if (WIFEXITED(status)) {
+          DEBG("%s: waitpid(pid=%d) exit with status = %d", attempt_dir, pid, WEXITSTATUS(status));
+        } else if (WCOREDUMP(status)) {
+          DEBG("%s: waitpid(pid=%d) coredump", attempt_dir, pid);
+          DeleteTempFiles(pid);
+        } else if (WIFSIGNALED(status)) {
+          DEBG("%s: waitpid(pid=%d) killed by signal %d", attempt_dir, pid, WTERMSIG(status));
+          DeleteTempFiles(pid);
         } else {
-          DEBG("%s: waitpid(pid=%d) finished normally", attempt_dir, pid);
+          DEBG("%s: waitpid(pid=%d) other status = %d(%#X)", attempt_dir, pid, status, status);
         }
       }
     }
@@ -1664,6 +1672,29 @@ static void RunOneJob(const DcompactMeta& meta, mg_connection* conn) noexcept {
     g_acceptedJobs.del(j.get());
     //INFO("after g_acceptedJobs.del");
   });
+}
+
+static void DeleteTempFiles(pid_t pid) {
+  const char* tmpdir = getenv("ToplingZipTable_localTempDir");
+  TERARK_VERIFY_F(nullptr != tmpdir, "env ToplingZipTable_localTempDir must be defined");
+  auto prefix = terark::string_appender<>()|"Topling-"|pid|"-";
+  using namespace std::filesystem;
+  std::error_code ec;
+  directory_iterator dir(tmpdir, ec);
+  TERARK_VERIFY_S(bool(ec), "directory_iterator(%s) = %s", tmpdir, ec.message());
+  for (auto& ent : dir) {
+    auto path = ent.path();
+    if (path.has_stem()) {
+      std::string stem = ent.path().stem().string();
+      if (Slice(stem).starts_with(prefix)) {
+        Logger* info_log = nullptr;
+        if (std::filesystem::remove(path, ec))
+          INFO("remove(%s) = ok", path.string());
+        else
+          WARN("remove(%s) = fail(%s)", path.string(), ec.message());
+      }
+    }
+  }
 }
 
 }; // class Job
