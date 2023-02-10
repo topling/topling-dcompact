@@ -24,7 +24,6 @@ using boost::intrusive_ptr;
 
 #include <getopt.h>
 #include <fcntl.h>
-#include <sys/mount.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -216,8 +215,9 @@ int mount_nfs(const DcompactMeta& meta, mg_connection* conn, Logger* info_log) {
       return err;
     }
   }
+  std::string nfs_type = meta.nfs_type.empty() ? "nfs" : meta.nfs_type;
   string_appender<> cmd;
-  cmd|"mount -t nfs -o "|meta.nfs_mnt_opt|" "|source|" "|target;
+  cmd|"mount -t "|nfs_type|" -o "|meta.nfs_mnt_opt|" "|source|" "|target;
   ProcPipeStream proc(cmd, "r2");
   LineBuf cmd_output(proc);
   int err = proc.xclose();

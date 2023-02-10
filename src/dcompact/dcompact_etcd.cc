@@ -433,6 +433,7 @@ class DcompactEtcdExecFactory : public CompactExecFactoryCommon {
   std::string etcd_url;
   std::string etcd_root;
   std::vector<std::unique_ptr<HttpParams> > http_workers; // http or https
+  std::string nfs_type = "nfs"; // default is nfs, can be glusterfs...
   std::string nfs_mnt_src;
   std::string nfs_mnt_opt;
   std::string report_url;
@@ -492,6 +493,7 @@ class DcompactEtcdExecFactory : public CompactExecFactoryCommon {
       THROW_InvalidArgument("json[\"http_workers\"] is required");
     }
     HttpParams::ParseJsonToVec(js["http_workers"], &http_workers);
+    ROCKSDB_JSON_REQ_PROP(js, nfs_type);
     ROCKSDB_JSON_REQ_PROP(js, nfs_mnt_src);
     ROCKSDB_JSON_REQ_PROP(js, nfs_mnt_opt);
 #ifdef TOPLING_DCOMPACT_USE_ETCD
@@ -552,6 +554,7 @@ class DcompactEtcdExecFactory : public CompactExecFactoryCommon {
     } else {
       djs["workers"] = HttpParams::DumpVecToJson(http_workers);
     }
+    ROCKSDB_JSON_SET_PROP(djs, nfs_type);
     ROCKSDB_JSON_SET_PROP(djs, nfs_mnt_src);
     ROCKSDB_JSON_SET_PROP(djs, nfs_mnt_opt);
     CompactExecFactoryCommon::ToJson(dump_options, djs);
@@ -677,6 +680,7 @@ try
   meta.dbname = dbname;
   meta.hoster_root = f->hoster_root;
   meta.output_root = params.cf_paths.back().path;
+  meta.nfs_type = f->nfs_type;
   meta.nfs_mnt_src = f->nfs_mnt_src;
   meta.nfs_mnt_opt = f->nfs_mnt_opt;
   meta.start_time = f->m_start_time;
