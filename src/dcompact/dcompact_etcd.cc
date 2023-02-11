@@ -486,16 +486,16 @@ class DcompactEtcdExecFactory : public CompactExecFactoryCommon {
       m_start_time_iso.resize(strftime(&m_start_time_iso[0], cap, "%FT%H:%M:%SZ", tp));
       m_start_time_iso.shrink_to_fit();
     }
-    ROCKSDB_JSON_REQ_PROP(js, web_domain);
+    ROCKSDB_JSON_OPT_PROP(js, web_domain);
     ROCKSDB_JSON_OPT_PROP(js, etcd_root);
     Update(js);
     if (!js.contains("http_workers")) {
       THROW_InvalidArgument("json[\"http_workers\"] is required");
     }
     HttpParams::ParseJsonToVec(js["http_workers"], &http_workers);
-    ROCKSDB_JSON_REQ_PROP(js, nfs_type);
-    ROCKSDB_JSON_REQ_PROP(js, nfs_mnt_src);
-    ROCKSDB_JSON_REQ_PROP(js, nfs_mnt_opt);
+    ROCKSDB_JSON_OPT_PROP(js, nfs_type);
+    ROCKSDB_JSON_OPT_PROP(js, nfs_mnt_src);
+    ROCKSDB_JSON_OPT_PROP(js, nfs_mnt_opt);
 #ifdef TOPLING_DCOMPACT_USE_ETCD
     if (!js.contains("etcd")) {
       //THROW_InvalidArgument("json[\"etcd\"] is required");
