@@ -24,6 +24,7 @@ using boost::intrusive_ptr;
 
 #include <getopt.h>
 #include <fcntl.h>
+#include <sys/mount.h> // for umount()
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/wait.h>
