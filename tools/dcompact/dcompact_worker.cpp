@@ -115,12 +115,9 @@ extern json from_query_string(const char* qry);
 extern void mg_print_cur_time(mg_connection *conn);
 extern std::string cur_time_stat();
 std::string ReadPostData(mg_connection* conn);
-extern void JS_TopTable_AddVersion(json& djs, bool html);
 __attribute__((weak)) json JS_TopZipTable_Global_Stat(bool html);
 __attribute__((weak)) json JS_TopZipTable_Global_Env();
 extern const char* StrDateTimeNow(); // in builtin_table_factory.cc
-
-__attribute__((weak)) void JS_ZipTable_AddVersion(json& djs, bool html);
 
 static SidePluginRepo repo; // empty repo
 
@@ -1287,11 +1284,7 @@ class StatHttpHandler : public CivetHandler {
         vars["Server"] = json::parse(buf);
       }
       if (JsonSmartBool(query, "version")) {
-        JS_ToplingDB_AddVersion(js, html);
-        if (JS_ZipTable_AddVersion) {
-          JS_ZipTable_AddVersion(js, html);
-        }
-        JS_TopTable_AddVersion(js, html);
+        JS_ModuleGitInfo_Add(js, html);
       }
       if (html) {
         mg_printf(conn, "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n"
