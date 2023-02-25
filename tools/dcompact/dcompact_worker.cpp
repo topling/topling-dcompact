@@ -783,6 +783,9 @@ int RunCompact(FILE* in, FILE* out) const {
   imm_dbo.db_paths.emplace_back(attempt_dir, UINT64_MAX);
   cfo.num_levels = params.num_levels;
   cfo.cf_paths = imm_dbo.db_paths;
+  cfo.compaction_style = params.compaction_style;
+  cfo.compaction_pri   = params.compaction_pri;
+  TERARK_VERIFY(kRoundRobin != params.compaction_pri);
   {
     imm_dbo.info_log = m_log;
     imm_dbo.info_log_level = params.compaction_log_level;

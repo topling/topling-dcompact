@@ -193,7 +193,11 @@ void DataIO_loadObject(DataIO& dio, std::vector<ObjectRpcParam>& vec) {
   }
 }
 
-DATA_IO_LOAD_SAVE_E(CompactionParams,
+DATA_IO_DUMP_RAW_MEM_E(CompactionStyle);
+DATA_IO_DUMP_RAW_MEM_E(CompactionPri);
+
+constexpr unsigned CurrentParamsVersion = 1;
+DATA_IO_LOAD_SAVE_EV(CompactionParams, CurrentParamsVersion,
                   & job_id & num_levels & output_level & cf_id
                   & cf_name
                   & version_set
@@ -219,10 +223,12 @@ DATA_IO_LOAD_SAVE_E(CompactionParams,
                   & sst_partitioner_factory & html_user_key_coder
                   & allow_ingest_behind
                   & preserve_deletes & bottommost_level
+                  & compaction_style & compaction_pri
                   & listeners
                   & table_properties_collector_factories
                   & ExplicitSerDePointer(existing_snapshots)
                 //& ExplicitSerDePointer(compaction_job_stats)
+                  & extensible_js_data
                   )
 
 using FileMinMeta = CompactionResults::FileMinMeta;
@@ -447,6 +453,8 @@ void CompactExecCommon::SetParams(CompactionParams* params, const Compaction* c)
   params->deletion_compaction = c->deletion_compaction();
   params->compaction_reason = c->compaction_reason();
   params->bottommost_level = c->bottommost_level();
+  params->compaction_style = imm_cfo.compaction_style;
+  params->compaction_pri   = imm_cfo.compaction_pri;
   params->smallest_user_key = c->GetSmallestUserKey().ToString();
   params->largest_user_key = c->GetLargestUserKey().ToString();
   params->smallest_seqno = c->GetSmallestSeqno();
