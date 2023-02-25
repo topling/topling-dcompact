@@ -873,7 +873,7 @@ int RunCompact(FILE* in, FILE* out) const {
     icfo->info_log = imm_dbo.info_log;
     icfo->info_log_level = imm_dbo.info_log_level;
     icfo->statistics = imm_dbo.statistics;
-    icfo->allow_mmap_reads = true;
+    //icfo->allow_mmap_reads = true; // not need any more
   }
   {
     VersionEdit edit;
