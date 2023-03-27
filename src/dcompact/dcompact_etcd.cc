@@ -570,6 +570,7 @@ class DcompactEtcdExecFactory : public CompactExecFactoryCommon {
   }
   std::string WorkersView(const json& dump_options, int cols) const;
   void Update(const json& js) final {
+    CompactExecFactoryCommon::Update(js);
     ROCKSDB_JSON_OPT_PROP(js, timeout_multiplier);
     ROCKSDB_JSON_OPT_SIZE(js, estimate_speed);
     ROCKSDB_JSON_OPT_PROP(js, overall_timeout);
