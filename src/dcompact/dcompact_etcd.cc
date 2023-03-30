@@ -435,7 +435,7 @@ class DcompactEtcdExecFactory : public CompactExecFactoryCommon {
   std::vector<std::unique_ptr<HttpParams> > http_workers; // http or https
   std::string nfs_type = "nfs"; // default is nfs, can be glusterfs...
   std::string nfs_mnt_src;
-  std::string nfs_mnt_opt;
+  std::string nfs_mnt_opt = "noatime";
   std::string report_url;
   std::string web_domain; // now just for iframe auto height
   std::string m_start_time;
