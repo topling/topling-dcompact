@@ -338,10 +338,12 @@ struct DcompactStatMap : hash_strmap<DcompactStatItem> {
       }
       js.push_back(sum.ToJson("sum"));
     }
-    js[0]["<htmltab:col>"] = json::array({
-      "Name", "Finish", "Live", "LastAccess", "Time(sec)", "Speed",
-      "KeyBytes", "ValBytes", "KVBytes", "Key/KV", "AVG:Bytes"
-    });
+    if (html) {
+      js[0]["<htmltab:col>"] = json::array({
+        "Name", "Finish", "Live", "LastAccess", "Time(sec)", "Speed",
+        "KeyBytes", "ValBytes", "KVBytes", "Key/KV", "AVG:Bytes"
+      });
+    }
     return js;
   }
   void RemoveOldestInLock(size_t num_cumu_exec) {
