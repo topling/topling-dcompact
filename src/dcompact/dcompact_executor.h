@@ -53,6 +53,7 @@ class CompactExecCommon : public CompactionExecutor {
 };
 
 struct DcompactMeta {
+  uint32_t    n_subcompacts = 1;
   uint16_t    n_listeners = 0;
   uint16_t    n_prop_coll_factory = 0;
   uint32_t    code_version = 0;

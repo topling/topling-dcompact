@@ -646,8 +646,10 @@ ROCKSDB_REG_PluginManip("DcompactCmd", CompactExecFactoryCommon_Manip);
 ROCKSDB_REG_PluginManip("DcompactEtcd", CompactExecFactoryCommon_Manip);
 
 void DcompactMeta::FromJsonObj(const json& js) {
+  n_subcompacts = 1;
   n_listeners = 0;
   n_prop_coll_factory = 0;
+  ROCKSDB_JSON_OPT_PROP(js, n_subcompacts);
   ROCKSDB_JSON_OPT_PROP(js, n_listeners);
   ROCKSDB_JSON_OPT_PROP(js, n_prop_coll_factory);
   ROCKSDB_JSON_REQ_PROP(js, code_version);
@@ -670,6 +672,8 @@ void DcompactMeta::FromJsonStr(const std::string& jstr) {
 }
 json DcompactMeta::ToJsonObj() const {
   json js;
+  if (n_subcompacts > 1)
+    ROCKSDB_JSON_SET_PROP(js, n_subcompacts);
   if (n_listeners)
     ROCKSDB_JSON_SET_PROP(js, n_listeners);
   if (n_prop_coll_factory)

@@ -665,6 +665,7 @@ try
   key|f->instance_name|"/"|f->m_start_time|"/"|dbname;
   key^"/job-%05d"^params.job_id^"/att-%02d"^m_attempt;
   DcompactMeta meta;
+  meta.n_subcompacts = params.max_subcompactions;
   meta.n_listeners = (uint16_t)params.listeners.size();
   meta.n_prop_coll_factory = (uint16_t)params.table_properties_collector_factories.size();
   {

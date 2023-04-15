@@ -272,6 +272,7 @@ static std::condition_variable g_stop_cond;
 
 using terark::util::concurrent_queue;
 static concurrent_queue<circular_queue<std::function<void()> > > g_workQueue;
+static std::atomic<size_t> g_jobsWaiting{0};
 
 static string_appender<> BuildMetaKey(const DcompactMeta& meta) {
   string_appender<> str;
@@ -296,6 +297,7 @@ public:
 static AcceptedJobsMap g_acceptedJobs;
 static void work_thread_func() {
   while (!g_stop || g_acceptedJobs.peekSize() > 0) {
+    // this is not perfect if n_subcompacts > 1, this issue is tolerable
     auto task = g_workQueue.pop_front();
     task();
   }
@@ -1267,7 +1269,8 @@ class StatHttpHandler : public CivetHandler {
         vars["Compactions"]["accepting"] = g_jobsAccepting.load(std::memory_order_relaxed);
       }
       vars["Compactions"]["running"] = g_jobsRunning.load(std::memory_order_relaxed);
-      vars["Compactions"]["waiting"] = g_workQueue.peekSize();
+      vars["Compactions"]["waiting"] = g_jobsWaiting.load(std::memory_order_relaxed);
+      vars["Compactions"]["queuing"] = g_workQueue.peekSize();
     //vars["Compactions"]["accepted"] = g_acceptedJobs.peekSize();
       vars["Compactions"]["finished"] = g_jobsFinished.load(std::memory_order_relaxed);
     #define ShowNonZero(name, atom_var) \
@@ -1551,10 +1554,12 @@ static void RunOneJob(const DcompactMeta& meta, mg_connection* conn) noexcept {
   ROCKS_LOG_INFO(info_log, "ADVERTISE_ADDR: %s : %s",
                  ADVERTISE_ADDR.c_str(), cur_time_stat().c_str());
   DEBG("meta: %s", meta.ToJsonStr());
+  auto n_subcompacts = meta.n_subcompacts;
   auto running = g_jobsRunning.load(std::memory_order_relaxed);
-  auto waiting = g_workQueue.peekSize();
+  auto waiting = g_jobsWaiting.fetch_add(n_subcompacts, std::memory_order_relaxed);
   size_t limit = (MAX_PARALLEL_COMPACTIONS + MAX_WAITING_COMPACTIONS) * 3/4;
   if (running + waiting >= limit) {
+    g_jobsWaiting.fetch_sub(n_subcompacts, std::memory_order_relaxed);
     g_jobsRejected.fetch_add(1, std::memory_order_relaxed);
     HttpErr(503, "%s : server busy, running jobs = %ld, waiting = %zd", attempt_dir, running, waiting);
     return;
@@ -1567,6 +1572,7 @@ static void RunOneJob(const DcompactMeta& meta, mg_connection* conn) noexcept {
     int err;
     std::tie(lru_handle, err) = g_mnt_map.ensure_mnt(meta, conn, info_log);
     if (err) {
+      g_jobsWaiting.fetch_sub(n_subcompacts, std::memory_order_relaxed);
       g_jobsPreFailed.fetch_add(1, std::memory_order_relaxed);
       return; // error was reported in ensure_mnt
     }
@@ -1577,6 +1583,7 @@ static void RunOneJob(const DcompactMeta& meta, mg_connection* conn) noexcept {
   FILE* in = fopen(inFname.c_str(), "rb");
   if (!in) {
     HttpErr(412, "fopen(%s, rb) = %s", inFname, strerror(errno));
+    g_jobsWaiting.fetch_sub(n_subcompacts, std::memory_order_relaxed);
     g_jobsPreFailed.fetch_add(1, std::memory_order_relaxed);
     return;
   }
@@ -1585,6 +1592,7 @@ static void RunOneJob(const DcompactMeta& meta, mg_connection* conn) noexcept {
   if (!out) {
     fclose(in);
     HttpErr(412, "fopen(%s, wb) = %s", outFname, strerror(errno));
+    g_jobsWaiting.fetch_sub(n_subcompacts, std::memory_order_relaxed);
     g_jobsPreFailed.fetch_add(1, std::memory_order_relaxed);
     return;
   }
@@ -1600,7 +1608,8 @@ static void RunOneJob(const DcompactMeta& meta, mg_connection* conn) noexcept {
   // capture vars by value, not by ref
   g_workQueue.push_back([=]() {
     auto t5 = pf.now();
-    g_jobsRunning.fetch_add(1, std::memory_order_relaxed);
+    g_jobsRunning.fetch_add(n_subcompacts, std::memory_order_relaxed);
+    g_jobsWaiting.fetch_sub(n_subcompacts, std::memory_order_relaxed);
     auto run = [=] {
       CompactionResults* results = j->results;
       results->mount_time_usec = pf.us(t1, t2);
@@ -1668,7 +1677,7 @@ static void RunOneJob(const DcompactMeta& meta, mg_connection* conn) noexcept {
     }
     //INFO("after lru_release");
     g_jobsFinished.fetch_add(1, std::memory_order_relaxed);
-    g_jobsRunning.fetch_sub(1, std::memory_order_relaxed);
+    g_jobsRunning.fetch_sub(n_subcompacts, std::memory_order_relaxed);
     g_acceptedJobs.del(j.get());
     //INFO("after g_acceptedJobs.del");
   });
