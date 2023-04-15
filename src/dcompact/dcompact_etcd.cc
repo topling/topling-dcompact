@@ -628,6 +628,8 @@ Status DcompactEtcdExec::Execute(const CompactionParams& params,
   if (!m_factory->allow_fallback_to_local) {
     TERARK_DIE_S("Fail with MaxRetry = %d, die: %s", m_attempt, s.ToString());
   }
+  m_done = true; // fail
+  CleanFiles(params, *results);
 Done:
   f->m_stat_map.m_mtx.lock();
   ROCKSDB_VERIFY_GE(f->m_stat_map.val(m_stat_idx).num_live_exec, 1);
