@@ -297,8 +297,9 @@ public:
 static AcceptedJobsMap g_acceptedJobs;
 static void work_thread_func() {
   while (!g_stop || g_acceptedJobs.peekSize() > 0) {
-    // this is not perfect if n_subcompacts > 1, this issue is tolerable
-    auto task = g_workQueue.pop_front();
+    auto task = g_workQueue.pop_front_if([]{
+      return g_jobsRunning.load(std::memory_order_relaxed) < MAX_PARALLEL_COMPACTIONS;
+    });
     task();
   }
 }
