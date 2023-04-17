@@ -271,7 +271,11 @@ static std::mutex              g_stop_mtx;
 static std::condition_variable g_stop_cond;
 
 using terark::util::concurrent_queue;
-static concurrent_queue<circular_queue<std::function<void()> > > g_workQueue;
+struct QueueItem {
+  std::function<void()> func;
+  uint32_t n_subcompacts;
+};
+static concurrent_queue<circular_queue<QueueItem> > g_workQueue;
 static std::atomic<size_t> g_jobsWaiting{0};
 
 static string_appender<> BuildMetaKey(const DcompactMeta& meta) {
@@ -298,9 +302,18 @@ static AcceptedJobsMap g_acceptedJobs;
 static void work_thread_func() {
   while (!g_stop || g_acceptedJobs.peekSize() > 0) {
     auto task = g_workQueue.pop_front_if([]{
-      return g_jobsRunning.load(std::memory_order_relaxed) < MAX_PARALLEL_COMPACTIONS;
+      auto running = g_jobsRunning.load(std::memory_order_relaxed);
+      if (0 == running) {
+        // if there is no running jobs, always return true, because
+        // n_subcompacts maybe larger than MAX_PARALLEL_COMPACTIONS,
+        // we allow over load on this scenario.
+        return true;
+      } else {
+        auto& front = g_workQueue.queue().front();
+        return running + front.n_subcompacts <= MAX_PARALLEL_COMPACTIONS;
+      }
     });
-    task();
+    task.func();
   }
 }
 
@@ -1607,7 +1620,7 @@ static void RunOneJob(const DcompactMeta& meta, mg_connection* conn) noexcept {
             ADVERTISE_ADDR.c_str());
 
   // capture vars by value, not by ref
-  g_workQueue.push_back([=]() {
+  g_workQueue.push_back({[=]() {
     auto t5 = pf.now();
     g_jobsRunning.fetch_add(n_subcompacts, std::memory_order_relaxed);
     g_jobsWaiting.fetch_sub(n_subcompacts, std::memory_order_relaxed);
@@ -1681,7 +1694,7 @@ static void RunOneJob(const DcompactMeta& meta, mg_connection* conn) noexcept {
     g_jobsRunning.fetch_sub(n_subcompacts, std::memory_order_relaxed);
     g_acceptedJobs.del(j.get());
     //INFO("after g_acceptedJobs.del");
-  });
+  }, n_subcompacts});
 }
 
 static void DeleteTempFiles(pid_t pid, Logger* info_log) {
