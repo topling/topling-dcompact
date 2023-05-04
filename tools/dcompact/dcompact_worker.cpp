@@ -292,6 +292,8 @@ class AcceptedJobsMap {
   hash_strmap<Job*> map;
   mutable std::mutex mtx;
 public:
+  hash_strmap<Job*>& get_map() { return map; }
+  std::mutex& get_mtx() { return mtx; }
   AcceptedJobsMap() { map.enable_freelist(4096); }
   std::pair<size_t, bool> add(Job*) noexcept;
   intrusive_ptr<Job> find(const DcompactMeta& key) const noexcept;
@@ -364,6 +366,8 @@ std::shared_ptr<Logger> m_log;
 Env* env = Env::Default();
 CompactionResults* results;
 std::atomic<pid_t> child_pid{-1};
+long long accept_time = 0;
+long long start_run_time = 0;
 
 // NOT for SST file, but for MANIFEST, info log, ...
 string job_dbname[5];
@@ -1240,6 +1244,92 @@ class ProbeCompactHandler : public BasePostHttpHandler {
   }
 };
 
+static const char* StrDateTime(long long now_miros) {
+  static thread_local char buf[64];
+  time_t rawtime = now_miros / 1000000;
+  struct tm* timeinfo = localtime(&rawtime);
+  auto len = strftime(buf, sizeof(buf), "%F %T",timeinfo);
+  sprintf(buf + len, ".%03lld", now_miros % 1000000 / 1000);
+  return buf;
+}
+
+class ListHttpHandler : public CivetHandler {
+ public:
+#if CIVETWEB_VERSION_MAJOR * 100000 + CIVETWEB_VERSION_MINOR * 100 >= 1*100000 + 15*100
+  using CivetHandler::handlePost;
+#endif
+  bool handleGet(CivetServer* server, struct mg_connection* conn) override {
+#if defined(NDEBUG)
+    try {
+#endif
+      const mg_request_info* req = mg_get_request_info(conn);
+      json query = from_query_string(req->query_string);
+      bool from_db_node = JsonSmartBool(query, "from_db_node", false);
+      bool html = JsonSmartBool(query, "html", true);
+      terark::string_appender<> oss;
+      oss.reserve(16*1024);
+      oss|R"(
+<table border=1><tbody>
+<tr>
+  <th>job worker dir</th>
+  <th>sub</th>
+  <th>accept time</th>
+  <th>start time</th>
+  <th>elapsed rt</th>
+</tr>
+)";
+  long long now_micros = Env::Default()->NowMicros();
+  g_acceptedJobs.get_mtx().lock();
+      for (size_t i = 0, n = g_acceptedJobs.get_map().end_i(); i < n; i++) {
+        if (g_acceptedJobs.get_map().is_deleted(i)) {
+          continue;
+        }
+        fstring key = g_acceptedJobs.get_map().key(i);
+        Job*    job = g_acceptedJobs.get_map().val(i);
+        //fstring logdir = fstring(job->attempt_dbname).substr(WORKER_DB_ROOT.size());
+        oss|"<tr>";
+        oss|"<td><a href='/"|key|"'>"|key|"</a></td>\n";
+        oss|"<th>"|job->m_meta.n_subcompacts|"</th>";
+        oss|"<td>"|StrDateTime(job->accept_time)|"</td>";
+        oss|"<td>"|StrDateTime(job->start_run_time)|"</td>";
+        oss^"<td align='right'>%.3f"^(now_micros - job->start_run_time)/1e6^"</td>";
+        oss|"</tr>\n";
+      }
+  g_acceptedJobs.get_mtx().unlock();
+      oss|"</tbody></table>\n";
+
+      if (html) {
+        mg_printf(conn, "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n"
+                        "<html><body>\n");
+        if (from_db_node)
+          mg_printf(conn, "<p>%s</p>\n", cur_time_stat().c_str());
+        else
+          mg_print_cur_time(conn);
+        if (WEB_DOMAIN)
+          mg_printf(conn, "<script>document.domain = '%s';</script>\n", WEB_DOMAIN);
+        mg_write(conn, oss.str());
+        mg_printf(conn, "</body></html>\n");
+      }
+      else {
+        mg_printf(conn, "HTTP/1.1 200 OK\r\nContent-Type: text/json\r\n\r\n");
+        mg_write(conn, oss.str());
+      }
+#if defined(NDEBUG)
+    }
+    catch (std::exception& ex) {
+      mg_printf(conn, "Caught: %s\n", ex.what());
+    }
+    catch (const Status& s) {
+      mg_printf(conn, "Status: %s\n", s.ToString().c_str());
+    }
+    catch (...) {
+      mg_printf(conn, "Unknown Error\n");
+    }
+#endif
+    return true;
+  }
+};
+
 class StatHttpHandler : public CivetHandler {
  public:
 #if CIVETWEB_VERSION_MAJOR * 100000 + CIVETWEB_VERSION_MINOR * 100 >= 1*100000 + 15*100
@@ -1409,11 +1499,13 @@ static int main(int argc, char* argv[]) {
   DcompactHttpHandler handle_dcompact;
   ShutdownCompactHandler handle_shutdown;
   ProbeCompactHandler handle_probe;
+  ListHttpHandler handle_list;
   StatHttpHandler handle_stat;
   StopHttpHandler handle_stop;
   civet.addHandler("/dcompact", handle_dcompact);
   civet.addHandler("/shutdown", handle_shutdown);
   civet.addHandler("/probe", handle_probe);
+  civet.addHandler("/list", handle_list);
   civet.addHandler("/stat", handle_stat);
   civet.addHandler("/stop", handle_stop); // stop process
   INFO("CivetServer setup ok, start work threads");
@@ -1614,6 +1706,7 @@ static void RunOneJob(const DcompactMeta& meta, mg_connection* conn) noexcept {
   INFO("accept %s : fopen(rpc.params) = %.6f sec, fopen(rpc.results) = %.6f sec",
        attempt_dir, pf.sf(t2, t3), pf.sf(t3, t4));
   g_acceptedJobs.add(j.get());
+  j->accept_time = j->env->NowMicros();
   mg_printf(conn, "HTTP/1.1 200 OK\r\n"
                   "Content-type: text\r\n\r\n"
                   R"({"status": "ok", "addr": "%s"})",
@@ -1621,6 +1714,7 @@ static void RunOneJob(const DcompactMeta& meta, mg_connection* conn) noexcept {
 
   // capture vars by value, not by ref
   g_workQueue.push_back({[=]() {
+    j->start_run_time = j->env->NowMicros();
     auto t5 = pf.now();
     g_jobsRunning.fetch_add(n_subcompacts, std::memory_order_relaxed);
     g_jobsWaiting.fetch_sub(n_subcompacts, std::memory_order_relaxed);
