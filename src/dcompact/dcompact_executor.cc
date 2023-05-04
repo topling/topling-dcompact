@@ -649,6 +649,8 @@ void DcompactMeta::FromJsonObj(const json& js) {
   n_subcompacts = 1;
   n_listeners = 0;
   n_prop_coll_factory = 0;
+  nfs_type = "nfs";
+  nfs_mnt_opt = "noatime";
   ROCKSDB_JSON_OPT_PROP(js, n_subcompacts);
   ROCKSDB_JSON_OPT_PROP(js, n_listeners);
   ROCKSDB_JSON_OPT_PROP(js, n_prop_coll_factory);
