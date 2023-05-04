@@ -368,6 +368,7 @@ CompactionResults* results;
 std::atomic<pid_t> child_pid{-1};
 long long accept_time = 0;
 long long start_run_time = 0;
+mutable size_t inputBytes[2] = {0,0};
 
 // NOT for SST file, but for MANIFEST, info log, ...
 string job_dbname[5];
@@ -786,6 +787,10 @@ int RunCompact(FILE* in, FILE* out) const {
                      params.full_history_ts_low.size());
   }
   VERIFY_S_EQ(params.cf_paths.back().path, m_meta.output_root);
+  params.InputBytes(inputBytes);
+  if (MULTI_PROCESS) {
+    process_mem_write(getppid(), inputBytes, sizeof(inputBytes));
+  }
   imm_dbo.listeners.clear(); // ignore event listener on worker
   imm_dbo.advise_random_on_open = false;
   imm_dbo.allow_fdatasync = false;
@@ -1091,8 +1096,6 @@ auto writeObjResult = [&]{
   // compact end time
   auto t3 = pf.now();
   const std::string end_time = StrDateTimeNow();
-  size_t inputBytes[2];
-  params.InputBytes(inputBytes);
   ShowCompactionParams(params, cfd->current(), cfd, &start_time, &end_time, pf.sf(t0, t3));
   if (terark::getEnvBool("DEL_WORKER_TEMP_DB", false)) {
     std::error_code ec;
@@ -1149,6 +1152,39 @@ void ShutDownCleanFiles() const {
     INFO("ShutDownCleanFiles: dir = %s", attempt_dir);
     m_shutdown_files_cleaned = true;
   }
+}
+
+static void write_html_header(struct mg_connection* conn, const json& query, const char* name) {
+  bool from_db_node = JsonSmartBool(query, "from_db_node", false);
+  mg_printf(conn, "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n");
+  int refresh = JsonSmartInt(query, "refresh", 0);
+  if (refresh > 0) {
+    mg_printf(conn,
+      "<html><title>%s</title>\n"
+      "<meta http-equiv='refresh' content='%d'>\n"
+      "<body>\n", name, refresh);
+  }
+  else {
+    mg_printf(conn, "<html><title>%s</title><body>\n", name);
+  }
+  if (from_db_node) {
+    mg_printf(conn, "<p>%s</p>\n", cur_time_stat().c_str());
+  } else {
+    mg_printf(conn, R"(
+<script>
+function SetParam(name, value) {
+  const url = new URL(location.href);
+  var params = new URLSearchParams(url.search);
+  params.set(name, value);
+  url.search = params.toString();
+  location.href = url.href;
+}
+</script>
+    )");
+    mg_print_cur_time(conn);
+  }
+  if (WEB_DOMAIN)
+    mg_printf(conn, "<script>document.domain = '%s';</script>\n", WEB_DOMAIN);
 }
 
 class BasePostHttpHandler : public CivetHandler {
@@ -1264,15 +1300,22 @@ class ListHttpHandler : public CivetHandler {
 #endif
       const mg_request_info* req = mg_get_request_info(conn);
       json query = from_query_string(req->query_string);
-      bool from_db_node = JsonSmartBool(query, "from_db_node", false);
       bool html = JsonSmartBool(query, "html", true);
       terark::string_appender<> oss;
       oss.reserve(16*1024);
       oss|R"(
+<link rel='stylesheet' type='text/css' href='/style.css'>
+<style>
+td {
+  text-align: right;
+}
+</style>
 <table border=1><tbody>
 <tr>
   <th>job worker dir</th>
   <th>sub</th>
+  <th>input raw</th>
+  <th>input zip</th>
   <th>accept time</th>
   <th>start time</th>
   <th>elapsed rt</th>
@@ -1286,27 +1329,21 @@ class ListHttpHandler : public CivetHandler {
         }
         fstring key = g_acceptedJobs.get_map().key(i);
         Job*    job = g_acceptedJobs.get_map().val(i);
-        //fstring logdir = fstring(job->attempt_dbname).substr(WORKER_DB_ROOT.size());
         oss|"<tr>";
-        oss|"<td><a href='/"|key|"'>"|key|"</a></td>\n";
+        oss|"<td align='left'><a href='/"|key|"'>"|key|"</a></td>\n";
         oss|"<th>"|job->m_meta.n_subcompacts|"</th>";
+        oss|"<td>"|SizeToString(job->inputBytes[0])|"</td>";
+        oss|"<td>"|SizeToString(job->inputBytes[1])|"</td>";
         oss|"<td>"|StrDateTime(job->accept_time)|"</td>";
         oss|"<td>"|StrDateTime(job->start_run_time)|"</td>";
-        oss^"<td align='right'>%.3f"^(now_micros - job->start_run_time)/1e6^"</td>";
+        oss^"<td>%.3f"^(now_micros - job->start_run_time)/1e6^"</td>";
         oss|"</tr>\n";
       }
   g_acceptedJobs.get_mtx().unlock();
       oss|"</tbody></table>\n";
 
       if (html) {
-        mg_printf(conn, "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n"
-                        "<html><body>\n");
-        if (from_db_node)
-          mg_printf(conn, "<p>%s</p>\n", cur_time_stat().c_str());
-        else
-          mg_print_cur_time(conn);
-        if (WEB_DOMAIN)
-          mg_printf(conn, "<script>document.domain = '%s';</script>\n", WEB_DOMAIN);
+        write_html_header(conn, query, "list");
         mg_write(conn, oss.str());
         mg_printf(conn, "</body></html>\n");
       }
@@ -1342,7 +1379,6 @@ class StatHttpHandler : public CivetHandler {
       const mg_request_info* req = mg_get_request_info(conn);
       json query = from_query_string(req->query_string);
       json js;
-      bool from_db_node = JsonSmartBool(query, "from_db_node", false);
       bool html = JsonSmartBool(query, "html", true);
       int verbose = JsonSmartInt(query, "verbose", 1);
       if (JS_TopZipTable_Global_Env) {
@@ -1397,14 +1433,7 @@ class StatHttpHandler : public CivetHandler {
         JS_ModuleGitInfo_Add(js, html);
       }
       if (html) {
-        mg_printf(conn, "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n"
-                        "<html><body>\n");
-        if (from_db_node)
-          mg_printf(conn, "<p>%s</p>\n", cur_time_stat().c_str());
-        else
-          mg_print_cur_time(conn);
-        if (WEB_DOMAIN)
-          mg_printf(conn, "<script>document.domain = '%s';</script>\n", WEB_DOMAIN);
+        write_html_header(conn, query, "stat");
         mg_write(conn, JsonToString(js, query));
         mg_printf(conn, "</body></html>\n");
       }
