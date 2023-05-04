@@ -1476,6 +1476,7 @@ static int main(int argc, char* argv[]) {
 #endif
   ConnectEtcd();
   vector<string> mg_options;
+  const char* doc_root = nullptr;
   for (int opt = 0; (opt = getopt(argc, argv, "D:")) != -1; ) {
     switch (opt) {
       default:
@@ -1485,6 +1486,9 @@ static int main(int argc, char* argv[]) {
         return 2;
       case 'D':
         if (auto eq = strchr(optarg, '=')) { // NOLINT
+          if (fstring(optarg, eq) == "document_root") {
+            doc_root = eq+1;
+          }
           mg_options.emplace_back(optarg, eq);
           mg_options.emplace_back(eq+1);
         } else {
@@ -1493,6 +1497,15 @@ static int main(int argc, char* argv[]) {
         }
         break;
     }
+  }
+  if (doc_root) {
+    if (doc_root != WORKER_DB_ROOT) {
+      fprintf(stderr, "ERROR: when arg -D document_root is given, it must be same with env WORKER_DB_ROOT\n");
+      return 1;
+    }
+  } else {
+    mg_options.push_back("document_root");
+    mg_options.push_back(WORKER_DB_ROOT);
   }
   mg_init_library(0);
   CivetServer civet(mg_options);
