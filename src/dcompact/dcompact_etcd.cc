@@ -103,6 +103,12 @@ struct EtcdConnectionParams {
 
 class DcompactEtcdExec; // forward declare
 
+class IgnoreCopyMutex : public std::mutex {
+public:
+  IgnoreCopyMutex() = default;
+  IgnoreCopyMutex(const IgnoreCopyMutex&) {}
+  IgnoreCopyMutex& operator=(const IgnoreCopyMutex&) { return *this; }
+};
 struct HttpParams {
   std::string web_url;
   std::string base_url;
@@ -125,7 +131,7 @@ struct HttpParams {
     size_t m_sum_runnings = 0; // sum all jobs for all db
   };
   struct RunningMap : hash_strmap<Labour> {
-    std::mutex m_mtx;
+    IgnoreCopyMutex m_mtx;
   };
   mutable RunningMap  m_running;
 #define m_running_mtx m_running.m_mtx
@@ -190,13 +196,13 @@ struct HttpParams {
   static bool IsComment(Slice str) {
     return str.starts_with("//") || str.starts_with("#");
   }
-  static void PushToVec(const json& js, std::vector<std::unique_ptr<HttpParams> >* v) {
-      auto x = std::make_unique<HttpParams>(); x->FromJson(js);
+  static void PushToVec(const json& js, std::vector<std::shared_ptr<HttpParams> >* v) {
+      auto x = std::make_shared<HttpParams>(); x->FromJson(js);
       if (!IsComment(x->url)) {
         v->push_back(std::move(x));
       }
   }
-  static void ParseJsonToVec(const json& js, std::vector<std::unique_ptr<HttpParams> >* v) {
+  static void ParseJsonToVec(const json& js, std::vector<std::shared_ptr<HttpParams> >* v) {
     if (js.is_array()) {
       for (auto& one_js : js) {
         PushToVec(one_js, v);
@@ -206,7 +212,7 @@ struct HttpParams {
       PushToVec(js, v);
     }
   }
-  static json DumpVecToJson(const std::vector<std::unique_ptr<HttpParams> >& v) {
+  static json DumpVecToJson(const std::vector<std::shared_ptr<HttpParams> >& v) {
     json js;
     if (v.size() == 1) {
       js = v[0]->ToJson();
@@ -364,7 +370,7 @@ struct DcompactStatMap : hash_strmap<DcompactStatItem> {
     }
   }
   DcompactStatItem m_dead;
-  std::mutex m_mtx;
+  IgnoreCopyMutex m_mtx;
 };
 
 struct DcompactFeeConfig {
@@ -429,12 +435,12 @@ struct DcompactFeeReport {
   }
 };
 
-class DcompactEtcdExecFactory : public CompactExecFactoryCommon {
+class DcompactEtcdExecFactory final : public CompactExecFactoryCommon {
  public:
   Env* m_env = Env::Default();
   std::string etcd_url;
   std::string etcd_root;
-  std::vector<std::unique_ptr<HttpParams> > http_workers; // http or https
+  std::vector<std::shared_ptr<HttpParams> > http_workers; // http or https
   std::string nfs_type = "nfs"; // default is nfs, can be glusterfs...
   std::string nfs_mnt_src;
   std::string nfs_mnt_opt = "noatime";
@@ -449,7 +455,7 @@ class DcompactEtcdExecFactory : public CompactExecFactoryCommon {
   int http_timeout = 3; // in seconds
   int overall_timeout = 5; // in seconds
   int retry_sleep_time = 1; // in seconds
-  std::unique_ptr<DcompactFeeConfig> fee_conf;
+  std::shared_ptr<DcompactFeeConfig> fee_conf;
 
 #ifdef TOPLING_DCOMPACT_USE_ETCD
   etcd::Client* m_etcd = nullptr;
@@ -474,9 +480,8 @@ class DcompactEtcdExecFactory : public CompactExecFactoryCommon {
     return r;
   }
 
-  DcompactEtcdExecFactory(const json& js, const SidePluginRepo& repo)
-      : CompactExecFactoryCommon(js, repo) {
-    {
+  DcompactEtcdExecFactory(const json& js, const SidePluginRepo& repo) {
+    if (!TemplatePropLoadFromJson<CompactionExecutorFactory>(this, js, repo)) {
       time_t rawtime = time(nullptr);
       struct tm  tm_storage;
       struct tm* tp = localtime_r(&rawtime, &tm_storage);
@@ -488,13 +493,18 @@ class DcompactEtcdExecFactory : public CompactExecFactoryCommon {
       m_start_time_iso.resize(strftime(&m_start_time_iso[0], cap, "%FT%H:%M:%SZ", tp));
       m_start_time_iso.shrink_to_fit();
     }
+    CompactExecFactoryCommon::init(js, repo);
     ROCKSDB_JSON_OPT_PROP(js, web_domain);
     ROCKSDB_JSON_OPT_PROP(js, etcd_root);
     Update(js);
     if (!js.contains("http_workers")) {
-      THROW_InvalidArgument("json[\"http_workers\"] is required");
+      if (http_workers.empty()) // if from template, it is not empty
+        THROW_InvalidArgument("json[\"http_workers\"] is required");
     }
-    HttpParams::ParseJsonToVec(js["http_workers"], &http_workers);
+    else {
+      http_workers.clear(); // if has defined in template, overwrite it
+      HttpParams::ParseJsonToVec(js["http_workers"], &http_workers);
+    }
     ROCKSDB_JSON_OPT_PROP(js, nfs_type);
     ROCKSDB_JSON_OPT_PROP(js, nfs_mnt_src);
     ROCKSDB_JSON_OPT_PROP(js, nfs_mnt_opt);
@@ -533,12 +543,13 @@ class DcompactEtcdExecFactory : public CompactExecFactoryCommon {
   }
   CompactionExecutor* NewExecutor(const Compaction*) const final;
   const char* Name() const final { return "DcompactEtcd"; }
-  void ToJson(const json& dump_options, json& djs) const final {
+  void ToJson(const json& dump_options, json& djs, const SidePluginRepo& repo) const final {
     if (int cols = JsonSmartInt(dump_options, "cols", 0)) {
       djs = WorkersView(dump_options, cols);
       return;
     }
     bool html = JsonSmartBool(dump_options, "html", true);
+    ROCKSDB_JSON_SET_TMPL(djs, compaction_executor_factory);
     char buf[64];
     djs["estimate_speed"] = ToStr("%.3f MB/sec", estimate_speed/1e6);
     ROCKSDB_JSON_SET_PROP(djs, timeout_multiplier);
@@ -559,7 +570,7 @@ class DcompactEtcdExecFactory : public CompactExecFactoryCommon {
     ROCKSDB_JSON_SET_PROP(djs, nfs_type);
     ROCKSDB_JSON_SET_PROP(djs, nfs_mnt_src);
     ROCKSDB_JSON_SET_PROP(djs, nfs_mnt_opt);
-    CompactExecFactoryCommon::ToJson(dump_options, djs);
+    CompactExecFactoryCommon::ToJson(dump_options, djs, repo);
     if (fee_conf) {
       djs["fee_conf"] = fee_conf->ToJson();
     }
@@ -783,7 +794,7 @@ try
     cond_var.notify_all();
   };
   int from_index = 0;
-  std::unique_ptr<etcd::Watcher> watcher;
+  std::shared_ptr<etcd::Watcher> watcher;
   if (pEtcd) {
     try {
       watcher.reset(new etcd::Watcher(

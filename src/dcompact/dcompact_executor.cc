@@ -507,7 +507,7 @@ void CompactExecCommon::NotifyResults(FILE* results, const CompactionParams& par
   }
 }
 
-CompactExecFactoryCommon::CompactExecFactoryCommon(const json& js, const SidePluginRepo& repo) {
+void CompactExecFactoryCommon::init(const json& js, const class SidePluginRepo& repo) {
   m_repo = &repo;
   ROCKSDB_JSON_OPT_PROP(js, dcompact_min_level); // default 2
   ROCKSDB_JSON_OPT_PROP(js, hoster_root);
@@ -542,7 +542,7 @@ CompactExecFactoryCommon::CompactExecFactoryCommon(const json& js, const SidePlu
     m_dbcf_min_level_js.reset(new json(js_dbcf));
   }
 }
-void CompactExecFactoryCommon::ToJson(const json& dump_options, json& djs)
+void CompactExecFactoryCommon::ToJson(const json& dump_options, json& djs, const SidePluginRepo& repo)
 const {
   ROCKSDB_JSON_SET_PROP(djs, dcompact_min_level);
   ROCKSDB_JSON_SET_PROP(djs, hoster_root);
@@ -597,6 +597,9 @@ bool CompactExecFactoryCommon::ShouldRunLocal(const Compaction* c) const {
       return output_level < min_level;
     }
   }
+  if (dcompact_min_level < 0) {
+    return output_level < -dcompact_min_level || !c->bottommost_level();
+  }
   return output_level < dcompact_min_level;
 }
 
@@ -635,7 +638,7 @@ struct CompactExecFactoryCommon_Manip :
                        const SidePluginRepo& repo) const final {
     if (auto dc = dynamic_cast<const CompactExecFactoryCommon*>(&fac)) {
       json djs;
-      dc->ToJson(dump_options, djs);
+      dc->ToJson(dump_options, djs, repo);
       return JsonToString(djs, dump_options);
     }
     std::string name = fac.Name();

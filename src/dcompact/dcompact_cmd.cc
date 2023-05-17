@@ -16,18 +16,20 @@ class DcompactCmdExecFactory : public CompactExecFactoryCommon {
  public:
   std::string cmd;
   std::string vfork_temp_dir;
-  DcompactCmdExecFactory(const json& js, const SidePluginRepo& repo)
-      : CompactExecFactoryCommon(js, repo) {
+  DcompactCmdExecFactory(const json& js, const SidePluginRepo& repo) {
+    CompactExecFactoryCommon::init(js, repo);
     vfork_temp_dir = "/tmp/dcompact-vfork";  // default
     ROCKSDB_JSON_REQ_PROP(js, cmd);
     ROCKSDB_JSON_OPT_PROP(js, vfork_temp_dir);
   }
   CompactionExecutor* NewExecutor(const Compaction*) const final;
   const char* Name() const final { return "DcompactCmd"; }
-  void ToJson(const json& dump_options, json& djs) const final {
+  void ToJson(const json& dump_options, json& djs, const SidePluginRepo& repo) const final {
+    bool html = JsonSmartBool(dump_options, "html", true);
+    ROCKSDB_JSON_SET_TMPL(djs, compaction_executor_factory);
     ROCKSDB_JSON_SET_PROP(djs, cmd);
     ROCKSDB_JSON_SET_PROP(djs, vfork_temp_dir);
-    CompactExecFactoryCommon::ToJson(dump_options, djs);
+    CompactExecFactoryCommon::ToJson(dump_options, djs, repo);
   }
   void Update(const json&) final {}
 };

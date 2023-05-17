@@ -20,17 +20,17 @@ public:
   std::string hoster_root;
   std::string instance_name; // default is hostname
   terark::hash_strmap<int> m_dbcf_min_level; // for individual db.cf
-  std::unique_ptr<json> m_dbcf_min_level_js;
+  std::shared_ptr<json> m_dbcf_min_level_js;
   mutable int num_cumu_exec = 0;
   mutable int num_live_exec = 0;
 
-  CompactExecFactoryCommon(const json&, const class SidePluginRepo&);
+  void init(const json&, const class SidePluginRepo&);
 
   bool ShouldRunLocal(const Compaction*) const override;
   bool AllowFallbackToLocal() const override;
 
   // new virtual functions
-  virtual void ToJson(const json& dump_options, json&) const;
+  virtual void ToJson(const json& dump_options, json&, const SidePluginRepo&) const;
   virtual void Update(const json&);
 };
 
