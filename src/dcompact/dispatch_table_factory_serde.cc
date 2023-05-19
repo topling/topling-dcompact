@@ -76,7 +76,7 @@ public:
           "%s : %s", tf->Name(), clazz.c_str());
       SerDe_DeSerialize(dio, clazz, tf.get());
       repo.Put(name, tf);
-      repo.m_impl->table_factory.p2name[tf.get()].params = std::move(js);
+      repo.m_impl->table_factory.p2name[tf.get()].spec = std::move(js);
       TRACE("end: i = %zd, num = %zd", i, num);
     }
     BackPatch(repo); // NOLINT
