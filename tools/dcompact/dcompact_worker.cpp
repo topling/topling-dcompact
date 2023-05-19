@@ -1304,7 +1304,7 @@ class ListHttpHandler : public CivetHandler {
       json query = from_query_string(req->query_string);
       bool html = JsonSmartBool(query, "html", true);
       terark::string_appender<> oss;
-      oss.reserve(16*1024);
+      oss.reserve(64*1024);
       oss|R"(
 <link rel='stylesheet' type='text/css' href='/style.css'>
 <style>
@@ -1340,12 +1340,30 @@ td {
         oss|"<td>"|StrDateTime(job->accept_time)|"</td>";
         oss|"<td>"|StrDateTime(job->start_run_time)|"</td>";
         oss^"<td>%.3f"^(now_micros - job->start_run_time)/1e6^"</td>";
-        oss|"<td><a href='"|"todo-kill-send-shut-down-command-by-post/put"|"'> TODO kill</td>";
+        oss|"\n<script>\nvar g_killed_"|i|" = false;\n";
+        oss|"async function kill_"|i|"() {\n";
+        oss|"  if (g_killed_"|i|") { alert('already killed'); return;}\n";
+        oss|"  var meta_js = `"|job->m_meta.ToJsonStr()|"`;";
+        oss^R"EOS(
+  const response = await fetch('/shutdown', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: meta_js
+  });
+  const text = await response.text();
+  document.getElementById('kill-result').innerHTML = "kill_%zd() = " + text;
+)EOS"^i;
+        oss|"  g_killed_"|i|" = true;\n";
+        oss|"}\n</script>\n";
+        oss|"<td><a href='javascript:kill_"|i|"()'>kill</td>";
         oss|"</tr>\n";
       }
   g_acceptedJobs.get_mtx().unlock();
       oss|"</tbody></table>\n";
-
+      oss|"<p></p>\n";
+      oss|"<pre id='kill-result'></pre>\n";
       if (html) {
         write_html_header(conn, query, "list");
         mg_write(conn, oss.str());
