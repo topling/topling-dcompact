@@ -1430,7 +1430,8 @@ class StatHttpHandler : public CivetHandler {
       if (verbose >= 3) {
         vars["Compactions"]["accepting"] = g_jobsAccepting.load(std::memory_order_relaxed);
       }
-      vars["Compactions"]["running"] = g_jobsRunning.load(std::memory_order_relaxed);
+      vars["Compactions"][html ? "<a href='/list'>running</a>" : "running"] =
+                          g_jobsRunning.load(std::memory_order_relaxed);
       vars["Compactions"]["waiting"] = g_jobsWaiting.load(std::memory_order_relaxed);
       vars["Compactions"]["queuing"] = g_workQueue.peekSize();
     //vars["Compactions"]["accepted"] = g_acceptedJobs.peekSize();
