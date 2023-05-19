@@ -355,6 +355,8 @@ void ShutDown() {
       auto info_log = m_log.get();
       WARN("%s: ShutDown: process_mem_write = %m", attempt_dbname);
     }
+    usleep(1<<30); // ~ 1 seconds
+    ::kill(child_pid, SIGKILL);
   }
 }
 
@@ -1319,6 +1321,7 @@ td {
   <th>accept time</th>
   <th>start time</th>
   <th>elapsed rt</th>
+  <th>kill</th>
 </tr>
 )";
   long long now_micros = Env::Default()->NowMicros();
@@ -1337,6 +1340,7 @@ td {
         oss|"<td>"|StrDateTime(job->accept_time)|"</td>";
         oss|"<td>"|StrDateTime(job->start_run_time)|"</td>";
         oss^"<td>%.3f"^(now_micros - job->start_run_time)/1e6^"</td>";
+        oss|"<td><a href='"|"todo-kill-send-shut-down-command-by-post/put"|"'> TODO kill</td>";
         oss|"</tr>\n";
       }
   g_acceptedJobs.get_mtx().unlock();
