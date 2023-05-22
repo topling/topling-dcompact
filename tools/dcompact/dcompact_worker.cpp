@@ -1345,7 +1345,7 @@ td {
         oss|"  if (g_killed_"|i|") { alert('already killed'); return;}\n";
         oss|"  var meta_js = `"|job->m_meta.ToJsonStr()|"`;";
         oss^R"EOS(
-  const response = await fetch('/shutdown', {
+  const response = await fetch('/shutdown' + document.location.search, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json'
