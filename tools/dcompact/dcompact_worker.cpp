@@ -891,6 +891,7 @@ int RunCompact(FILE* in, FILE* out) const {
     ColumnFamilyData* null_cfd = nullptr;
     bool new_descriptor_log = false;
     auto s = versions->LogAndApply(null_cfd, MutableCFOptions(cfo),
+                  ROCKSDB_8_X_COMMA(ReadOptions())
                   &edit, &mutex, null_dbdir, new_descriptor_log, &cfo);
     VERIFY_STATUS_OK(s);
   }
@@ -917,6 +918,7 @@ int RunCompact(FILE* in, FILE* out) const {
     // install files into ColumnFamily cfd
     bool new_descriptor_log = false;
     auto s = versions->LogAndApply(cfd, *cfd->GetLatestMutableCFOptions(),
+                  ROCKSDB_8_X_COMMA(ReadOptions())
                   &edit, &mutex, null_dbdir, new_descriptor_log, &cfo);
     VERIFY_STATUS_OK(s);
   }
