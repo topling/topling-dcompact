@@ -825,7 +825,7 @@ try
   auto t5 = m_env->NowMicros();
   size_t done_probe_fail_num = 0;
   size_t done_probe_fail_max = 5;
-  auto min_sleep = f->overall_timeout * 1000000 / done_probe_fail_max;
+  auto min_sleep = std::min<size_t>(estimate_time_us/done_probe_fail_max, 2000000u);
   auto first_sleep = lim(estimate_time_us/4, min_sleep, 5000000u);
   std::this_thread::sleep_for(microseconds(first_sleep));
   auto one_timeout = microseconds(lim(estimate_time_us/16, min_sleep, 2000000u));
