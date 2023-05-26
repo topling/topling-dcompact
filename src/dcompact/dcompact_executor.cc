@@ -545,10 +545,12 @@ void CompactExecFactoryCommon::init(const json& js, const class SidePluginRepo& 
 void CompactExecFactoryCommon::ToJson(const json& dump_options, json& djs, const SidePluginRepo& repo)
 const {
   ROCKSDB_JSON_SET_PROP(djs, dcompact_min_level);
+  ROCKSDB_JSON_SET_PROP(djs, dcompact_max_level);
   ROCKSDB_JSON_SET_PROP(djs, hoster_root);
   ROCKSDB_JSON_SET_PROP(djs, instance_name);
   ROCKSDB_JSON_SET_ENUM(djs, info_log_level);
   ROCKSDB_JSON_SET_PROP(djs, allow_fallback_to_local);
+  ROCKSDB_JSON_SET_PROP(djs, need_db_get);
   ROCKSDB_JSON_SET_PROP(djs, num_cumu_exec);
   ROCKSDB_JSON_SET_PROP(djs, num_live_exec);
   if (!m_dbcf_min_level.empty()) {
@@ -557,14 +559,25 @@ const {
 }
 void CompactExecFactoryCommon::Update(const json& js) {
   ROCKSDB_JSON_OPT_PROP(js, dcompact_min_level); // default 2
+  ROCKSDB_JSON_OPT_PROP(js, dcompact_max_level); // default INT_MAX
   ROCKSDB_JSON_OPT_ENUM(js, info_log_level);
   ROCKSDB_JSON_OPT_PROP(js, allow_fallback_to_local);
+
+  // some CompactionFilter will call DB::Get in Filter() to check and delete
+  // some data, in dcompact_worker, there is no DB, so we can skip such data
+  // Filter, such data must be Filter'ed on bottom most compaction, so we must
+  // run local compact for bottom most compaction.
+  // TODO: with ToplingZipTable, we can perform first pass scan on local, and
+  //       second scan on dcompact_worker
+  ROCKSDB_JSON_OPT_PROP(js, need_db_get); // default is false
 }
 
 bool CompactExecFactoryCommon::ShouldRunLocal(const Compaction* c) const {
   // -1 means unknown level, will run local
   int output_level = c->output_level();
   if (!m_dbcf_min_level.empty()) {
+    // now dbcf_min_level is deprecated, instead, define a new factory
+    // with "template": ${template_obj}
     const std::string& cfname = c->column_family_data()->GetName();
     // use base name of cfpath as dbname, so --
     // if using this feature, dbname should be same as basename(cf_path.back())
@@ -598,9 +611,14 @@ bool CompactExecFactoryCommon::ShouldRunLocal(const Compaction* c) const {
     }
   }
   if (dcompact_min_level < 0) {
-    return output_level < -dcompact_min_level || !c->bottommost_level();
+    if (need_db_get) // must run local compact at bottom level
+      return output_level < -dcompact_min_level ||
+             output_level > +dcompact_max_level || c->bottommost_level();
+    else
+      return output_level < -dcompact_min_level ||
+             output_level > +dcompact_max_level || !c->bottommost_level();
   }
-  return output_level < dcompact_min_level;
+  return output_level < dcompact_min_level || output_level > dcompact_max_level;
 }
 
 bool CompactExecFactoryCommon::AllowFallbackToLocal() const {

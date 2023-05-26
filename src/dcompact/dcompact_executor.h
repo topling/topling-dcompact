@@ -15,8 +15,10 @@ class CompactExecFactoryCommon : public CompactionExecutorFactory {
 public:
   const class SidePluginRepo* m_repo;
   int dcompact_min_level = 2;
+  int dcompact_max_level = INT_MAX;
   InfoLogLevel info_log_level = NUM_INFO_LOG_LEVELS;
   bool allow_fallback_to_local = false;
+  bool need_db_get = false;
   std::string hoster_root;
   std::string instance_name; // default is hostname
   terark::hash_strmap<int> m_dbcf_min_level; // for individual db.cf
