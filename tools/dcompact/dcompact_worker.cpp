@@ -1320,8 +1320,7 @@ td {
   <th>sub</th>
   <th>input raw</th>
   <th>input zip</th>
-  <th>accept time</th>
-  <th>start time</th>
+  <th>accept/start time</th>
   <th>elapsed rt</th>
   <th>kill</th>
 </tr>
@@ -1339,8 +1338,12 @@ td {
         oss|"<th>"|job->m_meta.n_subcompacts|"</th>";
         oss|"<td>"|SizeToString(job->inputBytes[0])|"</td>";
         oss|"<td>"|SizeToString(job->inputBytes[1])|"</td>";
-        oss|"<td>"|StrDateTime(job->accept_time)|"</td>";
-        oss|"<td>"|StrDateTime(job->start_run_time)|"</td>";
+        if (job->start_run_time - job->accept_time > 50000) { // 50ms
+          oss|"<td>"|StrDateTime(job->accept_time);
+          oss|"<br>"|StrDateTime(job->start_run_time)|"</td>";
+        } else { // time diff too small, just show start_run_time
+          oss|"<td>"|StrDateTime(job->start_run_time)|"</td>";
+        }
         oss^"<td>%.3f"^(now_micros - job->start_run_time)/1e6^"</td>";
         oss|"\n<script>\nvar g_killed_"|i|" = false;\n";
         oss|"async function kill_"|i|"() {\n";
