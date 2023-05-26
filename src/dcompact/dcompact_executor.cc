@@ -686,6 +686,7 @@ void DcompactMeta::FromJsonObj(const json& js) {
   ROCKSDB_JSON_REQ_PROP(js, instance_name);
   ROCKSDB_JSON_REQ_PROP(js, dbname);
   ROCKSDB_JSON_REQ_PROP(js, start_time);
+  ROCKSDB_JSON_OPT_PROP(js, estimate_time_us);
   ROCKSDB_JSON_REQ_PROP(js, job_id);
   ROCKSDB_JSON_REQ_PROP(js, attempt);
 }
@@ -715,6 +716,7 @@ json DcompactMeta::ToJsonObj() const {
   ROCKSDB_JSON_SET_PROP(js, instance_name);
   ROCKSDB_JSON_SET_PROP(js, dbname);
   ROCKSDB_JSON_SET_PROP(js, start_time);
+  ROCKSDB_JSON_SET_PROP(js, estimate_time_us);
   ROCKSDB_JSON_SET_PROP(js, job_id);
   ROCKSDB_JSON_SET_PROP(js, attempt);
   return js;

@@ -69,6 +69,7 @@ struct DcompactMeta {
   std::string instance_name;
   std::string dbname; // dbname in SidePluginRepo, not dbpath
   std::string start_time; // hoster process start time
+  size_t   estimate_time_us = 0;
   int job_id = -1;
   int attempt = 0;
   void FromJsonObj(const json&);

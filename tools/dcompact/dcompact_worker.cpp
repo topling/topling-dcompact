@@ -1344,7 +1344,9 @@ td {
         } else { // time diff too small, just show start_run_time
           oss|"<td>"|StrDateTime(job->start_run_time)|"</td>";
         }
-        oss^"<td>%.3f"^(now_micros - job->start_run_time)/1e6^"</td>";
+        oss^"<td><pre>%6.2f"^(now_micros - job->start_run_time)/1e6
+           ^"/%6.2f"^(job->m_meta.estimate_time_us)/1e6
+           ^"</pre></td>";
         oss|"\n<script>\nvar g_killed_"|i|" = false;\n";
         oss|"async function kill_"|i|"() {\n";
         oss|"  if (g_killed_"|i|") { alert('already killed'); return;}\n";

@@ -740,6 +740,9 @@ try
   } else {
     TERARK_VERIFY_S(s1.ok(), "%s", s1.ToString());
   }
+  double speed = f->rt_estimate_speed_mb(m_stat_idx);
+  size_t estimate_time_us = (size_t)ceil(input_raw_bytes() / speed);
+  meta.estimate_time_us = estimate_time_us;
   std::string meta_jstr = meta.ToJsonStr();
   auto t2 = m_env->NowMicros();
   size_t nth_http = as_atomic(f->m_round_robin_idx)
@@ -811,8 +814,6 @@ try
     "wrt = %6.3f, mka = %6.3f, mkw = %6.3f, curl %s = %6.3f sec, input = %s",
     meta.job_id, m_attempt, d1, d2, d3, m_url.c_str(), d4,
     SizeToString(m_input_raw_key_bytes + m_input_raw_val_bytes).c_str());
-  double speed = f->rt_estimate_speed_mb(m_stat_idx);
-  size_t estimate_time_us = (size_t)ceil(input_raw_bytes() / speed);
   size_t timeout_us = std::max({
           size_t(f->timeout_multiplier * estimate_time_us),
           size_t(f->http_timeout)*1000*1000,
