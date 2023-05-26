@@ -116,6 +116,7 @@ struct HttpParams {
   std::string ca; // ca file
   std::string cert; // can be empty
   std::string key;  // can be empty
+  unsigned weight = 100;
 
   struct Labour : hash_strmap<gold_hash_set<DcompactEtcdExec*> > {
   #if 0
@@ -154,6 +155,8 @@ struct HttpParams {
       if (!ca.empty() && !Slice(url).starts_with("https://")) {
         THROW_InvalidArgument("{url,ca}.url must be https when ca is set");
       }
+      ROCKSDB_JSON_OPT_PROP(js, weight);
+      weight = std::max(weight, 1u);
     }
     else {
       THROW_InvalidArgument("json must be a string or object{url,ca}");
@@ -184,12 +187,14 @@ struct HttpParams {
   }
   json ToJson() const {
     json js;
-    if (ca.empty()) {
+    if (ca.empty() && 100 == weight) {
       js = url;
     }
     else {
       ROCKSDB_JSON_SET_PROP(js, url);
-      ROCKSDB_JSON_SET_PROP(js, ca);
+      if (!ca.empty())
+        ROCKSDB_JSON_SET_PROP(js, ca);
+      ROCKSDB_JSON_SET_PROP(js, weight);
     }
     return js;
   }
@@ -435,6 +440,8 @@ struct DcompactFeeReport {
   }
 };
 
+ROCKSDB_ENUM_CLASS(LoadBalanceType, int, kRoundRobin, kWeight);
+
 class DcompactEtcdExecFactory final : public CompactExecFactoryCommon {
  public:
   Env* m_env = Env::Default();
@@ -456,6 +463,10 @@ class DcompactEtcdExecFactory final : public CompactExecFactoryCommon {
   int overall_timeout = 5; // in seconds
   int retry_sleep_time = 1; // in seconds
   std::shared_ptr<DcompactFeeConfig> fee_conf;
+  valvec<unsigned> m_weight_vec;
+  mutable std::mt19937_64 m_rand_gen;
+  unsigned m_weight_sum = 0;
+  LoadBalanceType load_balance = LoadBalanceType::kRoundRobin;
 
 #ifdef TOPLING_DCOMPACT_USE_ETCD
   etcd::Client* m_etcd = nullptr;
@@ -504,7 +515,15 @@ class DcompactEtcdExecFactory final : public CompactExecFactoryCommon {
     else {
       http_workers.clear(); // if has defined in template, overwrite it
       HttpParams::ParseJsonToVec(js["http_workers"], &http_workers);
+      m_weight_vec.reserve(http_workers.size());
+      unsigned sum = 0;
+      for (auto& x : http_workers) {
+        sum += x->weight;
+        m_weight_vec.push_back(sum);
+      }
+      m_weight_sum = sum;
     }
+    ROCKSDB_JSON_OPT_ENUM(js, load_balance);
     ROCKSDB_JSON_OPT_PROP(js, nfs_type);
     ROCKSDB_JSON_OPT_PROP(js, nfs_mnt_src);
     ROCKSDB_JSON_OPT_PROP(js, nfs_mnt_opt);
@@ -533,13 +552,26 @@ class DcompactEtcdExecFactory final : public CompactExecFactoryCommon {
     }
     // m_round_robin_idx - start at a random idx
     auto seed = std::chrono::system_clock::now().time_since_epoch().count();
-    auto rand = std::mt19937_64(seed)();
-    m_round_robin_idx = rand % http_workers.size();
+    m_rand_gen = std::mt19937_64(seed);
+    m_round_robin_idx = m_rand_gen() % http_workers.size();
   }
   ~DcompactEtcdExecFactory() override {
 #ifdef TOPLING_DCOMPACT_USE_ETCD
     delete m_etcd;
 #endif
+  }
+  size_t PickWorker() const {
+    if (LoadBalanceType::kRoundRobin == load_balance) {
+      return as_atomic(m_round_robin_idx)
+                      .fetch_add(1, std::memory_order_relaxed)
+                      % http_workers.size();
+    } else {
+      assert(LoadBalanceType::kWeight == load_balance);
+      m_stat_map.m_mtx.lock();
+      auto rand = m_rand_gen();
+      m_stat_map.m_mtx.unlock();
+      return lower_bound_a(m_weight_vec, rand % m_weight_sum);
+    }
   }
   CompactionExecutor* NewExecutor(const Compaction*) const final;
   const char* Name() const final { return "DcompactEtcd"; }
@@ -567,6 +599,7 @@ class DcompactEtcdExecFactory final : public CompactExecFactoryCommon {
     } else {
       djs["workers"] = HttpParams::DumpVecToJson(http_workers);
     }
+    ROCKSDB_JSON_SET_ENUM(djs, load_balance);
     ROCKSDB_JSON_SET_PROP(djs, nfs_type);
     ROCKSDB_JSON_SET_PROP(djs, nfs_mnt_src);
     ROCKSDB_JSON_SET_PROP(djs, nfs_mnt_opt);
@@ -745,10 +778,7 @@ try
   meta.estimate_time_us = estimate_time_us;
   std::string meta_jstr = meta.ToJsonStr();
   auto t2 = m_env->NowMicros();
-  size_t nth_http = as_atomic(f->m_round_robin_idx)
-                   .fetch_add(1, std::memory_order_relaxed)
-                  % f->http_workers.size();
-
+  size_t nth_http = f->PickWorker();
   m_start_ts = t1;
   const HttpParams* worker = f->http_workers[nth_http].get();
   const std::string old_labour_id = m_labour_id;
