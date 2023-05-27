@@ -474,6 +474,7 @@ class DcompactEtcdExecFactory final : public CompactExecFactoryCommon {
   int retry_sleep_time = 1; // in seconds
   std::shared_ptr<DcompactFeeConfig> fee_conf;
   valvec<unsigned> m_weight_vec;
+  mutable IgnoreCopyMutex m_rand_gen_mtx;
   mutable std::mt19937_64 m_rand_gen;
   unsigned m_weight_sum = 0;
   LoadBalanceType load_balance = LoadBalanceType::kRoundRobin;
@@ -576,9 +577,9 @@ class DcompactEtcdExecFactory final : public CompactExecFactoryCommon {
                       % http_workers.size();
     } else {
       assert(LoadBalanceType::kWeight == load_balance);
-      m_stat_map.m_mtx.lock();
+      m_rand_gen_mtx.lock();
       auto rand = m_rand_gen();
-      m_stat_map.m_mtx.unlock();
+      m_rand_gen_mtx.unlock();
       return lower_bound_a(m_weight_vec, rand % m_weight_sum);
     }
   }
