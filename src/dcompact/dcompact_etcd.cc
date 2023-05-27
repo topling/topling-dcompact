@@ -191,12 +191,15 @@ struct HttpParams {
     json js;
     ROCKSDB_JSON_SET_PROP(js, url);
     ROCKSDB_JSON_SET_PROP(js, weight);
-    ROCKSDB_JSON_SET_PROP(js, hits);
     if (html) {
       string_appender<> oss;
+      oss|"<a href='"|web_url|"/stat'>"|hits|"</a>";
+      js["hits"] = oss.str();
+      oss.clear();
       oss|"<a href='"|web_url|"/list'>"|live|"</a>";
       js["live"] = std::move(oss.str());
     } else {
+      ROCKSDB_JSON_SET_PROP(js, hits);
       ROCKSDB_JSON_SET_PROP(js, live);
     }
     if (with_ca) {
