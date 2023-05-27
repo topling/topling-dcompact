@@ -117,6 +117,8 @@ struct HttpParams {
   std::string cert; // can be empty
   std::string key;  // can be empty
   unsigned weight = 100;
+  mutable unsigned hits = 0;
+  mutable unsigned live = 0;
 
   struct Labour : hash_strmap<gold_hash_set<DcompactEtcdExec*> > {
   #if 0
@@ -185,16 +187,14 @@ struct HttpParams {
       web_url = base_url;
     }
   }
-  json ToJson() const {
+  json ToJson(bool with_ca) const {
     json js;
-    if (ca.empty() && 100 == weight) {
-      js = url;
-    }
-    else {
-      ROCKSDB_JSON_SET_PROP(js, url);
-      if (!ca.empty())
-        ROCKSDB_JSON_SET_PROP(js, ca);
-      ROCKSDB_JSON_SET_PROP(js, weight);
+    ROCKSDB_JSON_SET_PROP(js, url);
+    ROCKSDB_JSON_SET_PROP(js, weight);
+    ROCKSDB_JSON_SET_PROP(js, hits);
+    ROCKSDB_JSON_SET_PROP(js, live);
+    if (with_ca) {
+      js["ca"] = ca.empty() ? "N" : "Y";
     }
     return js;
   }
@@ -217,13 +217,23 @@ struct HttpParams {
       PushToVec(js, v);
     }
   }
-  static json DumpVecToJson(const std::vector<std::shared_ptr<HttpParams> >& v) {
+  static json DumpVecToJson(const std::vector<std::shared_ptr<HttpParams> >& v, bool html) {
     json js;
-    if (v.size() == 1) {
-      js = v[0]->ToJson();
+    bool with_ca = false;
+    for (auto& one : v) {
+      if (!one->ca.empty()) { with_ca = true; break; }
     }
-    else for (auto& one : v) {
-      js.push_back(one->ToJson());
+    for (auto& one : v) {
+      js.push_back(one->ToJson(with_ca));
+    }
+    if (html) {
+      json& cols = js[0]["<htmltab:col>"];
+      cols.push_back("url");
+      cols.push_back("weight");
+      cols.push_back("hits");
+      cols.push_back("live");
+      if (with_ca)
+        cols.push_back("ca");
     }
     return js;
   }
@@ -523,7 +533,6 @@ class DcompactEtcdExecFactory final : public CompactExecFactoryCommon {
       }
       m_weight_sum = sum;
     }
-    ROCKSDB_JSON_OPT_ENUM(js, load_balance);
     ROCKSDB_JSON_OPT_PROP(js, nfs_type);
     ROCKSDB_JSON_OPT_PROP(js, nfs_mnt_src);
     ROCKSDB_JSON_OPT_PROP(js, nfs_mnt_opt);
@@ -593,12 +602,8 @@ class DcompactEtcdExecFactory final : public CompactExecFactoryCommon {
     ROCKSDB_JSON_SET_PROP(djs, max_book_dbcf);
     ROCKSDB_JSON_SET_PROP(djs, retry_sleep_time);
     ROCKSDB_JSON_SET_PROP(djs, web_domain);
-    if (html) {
-      djs[R"(<a href='javascript:SetParam("cols","3")'>workers</a>)"]
-        = HttpParams::DumpVecToJson(http_workers);
-    } else {
-      djs["workers"] = HttpParams::DumpVecToJson(http_workers);
-    }
+    djs[html ? R"(<a href='javascript:SetParam("cols","3")'>workers</a>)" : "workers"]
+        = HttpParams::DumpVecToJson(http_workers, html);
     ROCKSDB_JSON_SET_ENUM(djs, load_balance);
     ROCKSDB_JSON_SET_PROP(djs, nfs_type);
     ROCKSDB_JSON_SET_PROP(djs, nfs_mnt_src);
@@ -622,6 +627,7 @@ class DcompactEtcdExecFactory final : public CompactExecFactoryCommon {
     ROCKSDB_JSON_OPT_PROP(js, overall_timeout);
     ROCKSDB_JSON_OPT_PROP(js, http_timeout);
     ROCKSDB_JSON_OPT_PROP(js, http_max_retry);
+    ROCKSDB_JSON_OPT_ENUM(js, load_balance);
     ROCKSDB_JSON_OPT_PROP(js, max_book_dbcf);
     ROCKSDB_JSON_OPT_PROP(js, retry_sleep_time);
     maximize(overall_timeout, http_timeout);
@@ -781,6 +787,11 @@ try
   size_t nth_http = f->PickWorker();
   m_start_ts = t1;
   const HttpParams* worker = f->http_workers[nth_http].get();
+  as_atomic(worker->hits).fetch_add(1, std::memory_order_relaxed);
+  as_atomic(worker->live).fetch_add(1, std::memory_order_relaxed);
+  ROCKSDB_SCOPE_EXIT(
+    as_atomic(worker->live).fetch_sub(1, std::memory_order_relaxed);
+  );
   const std::string old_labour_id = m_labour_id;
   auto t3 = m_env->NowMicros();
   Status s = SubmitHttp("/dcompact", meta_jstr, nth_http);
