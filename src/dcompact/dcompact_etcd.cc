@@ -187,12 +187,18 @@ struct HttpParams {
       web_url = base_url;
     }
   }
-  json ToJson(bool with_ca) const {
+  json ToJson(bool with_ca, bool html) const {
     json js;
     ROCKSDB_JSON_SET_PROP(js, url);
     ROCKSDB_JSON_SET_PROP(js, weight);
     ROCKSDB_JSON_SET_PROP(js, hits);
-    ROCKSDB_JSON_SET_PROP(js, live);
+    if (html) {
+      string_appender<> oss;
+      oss|"<a href='"|web_url|"/list'>"|live|"</a>";
+      js["live"] = std::move(oss.str());
+    } else {
+      ROCKSDB_JSON_SET_PROP(js, live);
+    }
     if (with_ca) {
       js["ca"] = ca.empty() ? "N" : "Y";
     }
@@ -224,7 +230,7 @@ struct HttpParams {
       if (!one->ca.empty()) { with_ca = true; break; }
     }
     for (auto& one : v) {
-      js.push_back(one->ToJson(with_ca));
+      js.push_back(one->ToJson(with_ca, html));
     }
     if (html) {
       json& cols = js[0]["<htmltab:col>"];
