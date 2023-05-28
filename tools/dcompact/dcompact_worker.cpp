@@ -115,6 +115,9 @@ extern json from_query_string(const char* qry);
 extern void mg_print_cur_time(mg_connection *conn);
 extern std::string cur_time_stat();
 std::string ReadPostData(mg_connection* conn);
+// PostHttpRequest and PostHttpRequest are defined in top_zip_table_builder.cc
+__attribute__((weak)) pid_t GetZipServerPID();
+__attribute__((weak)) json PostHttpRequest(const std::string& uri, const std::string& body, bool strict);
 __attribute__((weak)) json JS_TopZipTable_Global_Stat(bool html);
 __attribute__((weak)) json JS_TopZipTable_Global_Env();
 extern const char* StrDateTimeNow(); // in builtin_table_factory.cc
@@ -1864,9 +1867,13 @@ static void RunOneJob(const DcompactMeta& meta, mg_connection* conn) noexcept {
 }
 
 static void DeleteTempFiles(pid_t pid, Logger* info_log) {
+  if (!GetZipServerPID) {
+    return; // has no top_zip_table_builder.cc
+  }
   const char* tmpdir = getenv("ToplingZipTable_localTempDir");
   TERARK_VERIFY_F(nullptr != tmpdir, "env ToplingZipTable_localTempDir must be defined");
   auto prefix = terark::string_appender<>()|"Topling-"|pid|"-";
+  std::string fname;
   using namespace std::filesystem;
   std::error_code ec;
   directory_iterator dir(tmpdir, ec);
@@ -1876,12 +1883,25 @@ static void DeleteTempFiles(pid_t pid, Logger* info_log) {
     if (path.has_stem()) {
       std::string stem = ent.path().stem().string();
       if (Slice(stem).starts_with(prefix)) {
+        if (fname.empty()) {
+          fname = stem;
+        }
         if (std::filesystem::remove(path, ec))
           INFO("remove(%s) = ok", path.string());
         else
           WARN("remove(%s) = fail(%s)", path.string(), ec.message());
       }
     }
+  }
+  if (!fname.empty() && GetZipServerPID() > 0) {
+    // delete registered task on
+    // tmpSentryFile_.path = localTempDir|"/Topling-"|getpid()|"-XXXXXX";
+    // -XXXXXX has 6 'X'---------------------------------v-------^^^^^^
+    std::string sentryFileName(fname, 0, prefix.size() + 6);
+    std::string sentryFilePath = (path(tmpdir) / sentryFileName).string();
+    std::string uri = "/register?action=del&sentry=" + sentryFilePath;
+    json res = PostHttpRequest(uri, "{}", false/*strict*/);
+    INFO("libcurl(%s) = %s", uri, res.dump());
   }
 }
 
