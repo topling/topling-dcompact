@@ -580,6 +580,9 @@ class DcompactEtcdExecFactory final : public CompactExecFactoryCommon {
 #endif
   }
   size_t PickWorker() const {
+    if (http_workers.size() == 1) {
+      return 0;
+    }
     if (LoadBalanceType::kRoundRobin == load_balance) {
       return as_atomic(m_round_robin_idx)
                       .fetch_add(1, std::memory_order_relaxed)
