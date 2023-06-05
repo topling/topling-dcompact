@@ -115,7 +115,7 @@ extern json from_query_string(const char* qry);
 extern void mg_print_cur_time(mg_connection *conn);
 extern std::string cur_time_stat();
 std::string ReadPostData(mg_connection* conn);
-// PostHttpRequest and PostHttpRequest are defined in top_zip_table_builder.cc
+// GetZipServerPID and PostHttpRequest are defined in top_zip_table_builder.cc
 __attribute__((weak)) pid_t GetZipServerPID();
 __attribute__((weak)) json PostHttpRequest(const std::string& uri, const std::string& body, bool strict);
 __attribute__((weak)) json JS_TopZipTable_Global_Stat(bool html);
@@ -785,7 +785,25 @@ int RunCompact(FILE* in, FILE* out) const {
     MyCreatePlugin1(cfo, table_properties_collector_factories[i]);
   }
   DEBG("Beg SerDeRead: %s", attempt_dir);
+#if defined(NDEBUG)
+  try {
+    SerDeRead(in, &params);
+  }
+  catch (const std::exception& ex) {
+    ERROR("SerDeRead = %s", ex.what());
+    return 0;
+  }
+  catch (const Status& es) {
+    ERROR("SerDeRead = %s", es.ToString());
+    return 0;
+  }
+  catch (...) {
+    ERROR("SerDeRead = unknown exception");
+    return 0;
+  }
+#else
   SerDeRead(in, &params);
+#endif
   DEBG("End SerDeRead: %s", attempt_dir);
   if (!params.full_history_ts_low.empty()) {
     VERIFY_EQ(cfo.comparator->timestamp_size(),
