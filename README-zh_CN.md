@@ -73,7 +73,7 @@ etcd   | etcd 的连接选项，默认无认证，需要认证的话，有两种
 `etcd_root` | 该 `dcompact` 的所有数据都保存在 `etcd_root` 之下
 -->
 
-### 1.1. http_workers
+### 1.3. http_workers
 在内网环境下，每个 worker 可以简单地配置为一个字符串，表示 worker 的 http url。
 
 在公网（例如云计算）环境下，worker 隐藏在反向代理/负载均衡后面，为此增加了几个配置字段：
@@ -84,7 +84,7 @@ url | 提交 compact job
 base_url | probe 查询 compact job 或 shutdown 指定 compact job
 web_url | 在浏览器中通过 stat 查看状态，以及查看 log 文件
 
-### 1.3. 注意事项
+### 1.4. 注意事项
 CFOptions 的 `level_compaction_dynamic_level_bytes` 务必显示指定为 `false`，为 `true` 时，很可能会跳过 L1，直接 compact 到 L**n**，产生很大的单个 compact 并且无法利用 `max_level1_subcompactions` 配置的并发，导致长时间的卡顿。
 
 ## 2. dcompact worker
