@@ -16,7 +16,9 @@
 > 分布式 Compact 的实现类名是 DcompactEtcd，这是因为 ToplingDB 分布式 Compact 最初是通过 etcd-cpp-api 使用 etcd 用作 Hoster 与 Worker 的交互，后来因为 etcd-cpp-api 的 [bug #78](https://github.com/etcd-cpp-apiv3/etcd-cpp-apiv3/issues/78) 而不得不弃用 etcd。目前 etcd 相关代码已经无用，仅有 DcompactEtcd 作为类名保留下来。
 
 
-## 1. json 配置
+## 1. 配置
+
+### 1.1. json 配置示例
 
 分布式 Compact 在 json 配置文件中进行设置：
 ```json
@@ -46,7 +48,9 @@
   }
 ```
 
-在这里，`CompactionExecutorFactory` 是 C++ 的接口，在 json 中是一个 namespace，在这个 namespace 中，定义了一个 varname 为 `dcompact`，类名为 `DcompactEtcd` 的（实现了 `CompactionExecutorFactory` 接口）的对象，该对象使用 `params` 进行构造。params 解释说明如下：
+### 1.2. 配置参数说明
+
+在 1.1 中，`CompactionExecutorFactory` 是 C++ 的接口，在 json 中是一个 namespace，在这个 namespace 中，定义了一个 varname 为 `dcompact`，类名为 `DcompactEtcd` 的（实现了 `CompactionExecutorFactory` 接口）的对象，该对象使用 `params` 进行构造。params 解释说明如下：
 
 属性名  | 类型 | 默认值 | 解释说明
 -------|:----:|-------|--------
@@ -80,6 +84,8 @@ url | 提交 compact job
 base_url | probe 查询 compact job 或 shutdown 指定 compact job
 web_url | 在浏览器中通过 stat 查看状态，以及查看 log 文件
 
+### 1.3. 注意事项
+CFOptions 的 `level_compaction_dynamic_level_bytes` 务必显示指定为 `false`，为 `true` 时，很可能会跳过 L1，直接 compact 到 L**n**，产生很大的单个 compact 并且无法利用 `max_level1_subcompactions` 配置的并发，导致长时间的卡顿。
 
 ## 2. dcompact worker
 
