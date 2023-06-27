@@ -1262,7 +1262,7 @@ class ShutdownCompactHandler : public BasePostHttpHandler {
  public:
   void doIt(const DcompactMeta& meta, struct mg_connection* conn) override {
     Logger* info_log = nullptr;
-    auto p = g_acceptedJobs.find(meta);
+    intrusive_ptr p = g_acceptedJobs.find(meta);
     if (p) {
       info_log = p->m_log.get();
       p->ShutDown();
@@ -1287,7 +1287,7 @@ class ProbeCompactHandler : public BasePostHttpHandler {
  public:
   void doIt(const DcompactMeta& meta, struct mg_connection* conn) override {
     Logger* info_log = nullptr;
-    auto p = g_acceptedJobs.find(meta);
+    intrusive_ptr p = g_acceptedJobs.find(meta);
     if (p) {
       info_log = p->m_log.get();
       mg_printf(conn,
