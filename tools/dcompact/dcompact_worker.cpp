@@ -1343,6 +1343,7 @@ td {
   <th>input raw</th>
   <th>input zip</th>
   <th>init/accept/start time</th>
+  <th>wait</th>
   <th>elapsed rt</th>
   <th>kill</th>
 </tr>
@@ -1372,6 +1373,9 @@ td {
         } else { // time diff too small, just show start_run_time
           oss|"<td>"|StrDateTime(start_run_time)|"</td>";
         }
+        oss^"<td align='right'>%6.2f"
+           ^((start_run_time?:now_micros) - (accept_time?:init_time))/1e6
+           ^"</td>";
         oss^"<td><pre>%6.2f"^(now_micros - (start_run_time?:accept_time?:init_time))/1e6
            ^"/%6.2f"^(job->m_meta.estimate_time_us)/1e6
            ^"</pre></td>";
