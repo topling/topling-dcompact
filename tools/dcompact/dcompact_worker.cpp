@@ -1272,7 +1272,6 @@ class ShutdownCompactHandler : public BasePostHttpHandler {
       );
       INFO("shutdown success: %s", meta.ToJsonStr());
       info_log->Flush();
-      g_acceptedJobs.del(p.get());
     }
     else {
       mg_printf(conn,
@@ -1962,12 +1961,7 @@ AcceptedJobsMap::find(const DcompactMeta& meta) const noexcept {
 void AcceptedJobsMap::del(Job* j) noexcept {
   const auto key = BuildMetaKey(j->m_meta);
   mtx.lock();
-  size_t idx = map.find_i(key);
-  if (idx < map.end_i()) {
-    // may be false positive in principle, but should not happen in reality
-    TERARK_VERIFY_S(map.val(idx) == j, "key = %s", key);
-    map.erase_i(idx);
-  }
+  TERARK_VERIFY_S(map.erase(key), "key = %s", key);
   mtx.unlock();
 }
 
