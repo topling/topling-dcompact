@@ -359,7 +359,10 @@ void ShutDown() {
       WARN("%s: ShutDown: process_mem_write = %m", attempt_dbname);
     }
     usleep(1000000); // 1 second
-    ::kill(child_pid, SIGKILL);
+    if (::kill(child_pid, SIGKILL) < 0) {
+      auto info_log = m_log.get();
+      WARN("%s: ShutDown: kill(child_pid = %d, SIGKILL) = %m", attempt_dbname, child_pid.load());
+    }
   }
 }
 
