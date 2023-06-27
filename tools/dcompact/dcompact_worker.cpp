@@ -371,6 +371,7 @@ std::shared_ptr<Logger> m_log;
 Env* env = Env::Default();
 CompactionResults* results;
 std::atomic<pid_t> child_pid{-1};
+long long init_time = env->NowMicros();
 long long accept_time = 0;
 long long start_run_time = 0;
 mutable size_t inputBytes[2] = {0,0};
@@ -1341,7 +1342,7 @@ td {
   <th>sub</th>
   <th>input raw</th>
   <th>input zip</th>
-  <th>accept/start time</th>
+  <th>init/accept/start time</th>
   <th>elapsed rt</th>
   <th>kill</th>
 </tr>
@@ -1354,18 +1355,24 @@ td {
         }
         fstring key = g_acceptedJobs.get_map().key(i);
         Job*    job = g_acceptedJobs.get_map().val(i);
+        auto init_time = job->init_time;
+        auto accept_time = job->accept_time;
+        auto start_run_time = job->start_run_time;
         oss|"<tr>";
         oss|"<td align='left'><a href='/"|key|"'>"|key|"</a></td>\n";
         oss|"<th>"|job->m_meta.n_subcompacts|"</th>";
         oss|"<td>"|SizeToString(job->inputBytes[0])|"</td>";
         oss|"<td>"|SizeToString(job->inputBytes[1])|"</td>";
-        if (job->start_run_time - job->accept_time > 50000) { // 50ms
-          oss|"<td>"|StrDateTime(job->accept_time);
-          oss|"<br>"|StrDateTime(job->start_run_time)|"</td>";
-        } else { // time diff too small, just show start_run_time
-          oss|"<td>"|StrDateTime(job->start_run_time)|"</td>";
+        if (0 == accept_time) { // not accepted
+          oss|"<td style='color:DarkCyan'>"|StrDateTime(init_time)|"</td>";
         }
-        oss^"<td><pre>%6.2f"^(now_micros - job->start_run_time)/1e6
+        else if (start_run_time - accept_time > 100000) { // 100ms
+          oss|"<td>"|StrDateTime(accept_time);
+          oss|"<br>"|StrDateTime(start_run_time)|"</td>";
+        } else { // time diff too small, just show start_run_time
+          oss|"<td>"|StrDateTime(start_run_time)|"</td>";
+        }
+        oss^"<td><pre>%6.2f"^(now_micros - (start_run_time?:accept_time?:init_time))/1e6
            ^"/%6.2f"^(job->m_meta.estimate_time_us)/1e6
            ^"</pre></td>";
         oss|"\n<script>\nvar g_killed_"|i|" = false;\n";
