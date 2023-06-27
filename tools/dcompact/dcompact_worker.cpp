@@ -103,6 +103,26 @@ do { \
 #define VERIFY_EQ(x, y) VERIFY_S(x == y, "%lld %lld", llong(x), llong(y))
 #define VERIFY_S_EQ(x, y) VERIFY_S(x == y, "%s %s", x, y)
 
+#if defined(NDEBUG)
+  #define DCOMPACT_WORKER_TRY() try {
+  #define DCOMPACT_WORKER_CATCH(text)  } \
+    catch (const json::exception& ex) { \
+      HttpErr(412, "json::exception: %s, " #text " = {len=%zd: %s}", ex.what(), text.size(), text); \
+    } \
+    catch (const std::exception& ex) { \
+      HttpErr(412, "std::exception: %s, " #text " = {len=%zd: %s}", ex.what(), text.size(), text); \
+    } \
+    catch (const Status& s) { \
+      HttpErr(412, "rocksdb::Status: %s, " #text " = {len=%zd: %s}", s.ToString(), text.size(), text); \
+    } \
+    catch (...) { \
+      HttpErr(412, "Unknown Error, " #text " = {len=%zd: %s}", text.size(), text); \
+    }
+#else
+  #define DCOMPACT_WORKER_TRY()
+  #define DCOMPACT_WORKER_CATCH(text)
+#endif
+
 extern const char* rocksdb_build_git_sha;
 
 namespace ROCKSDB_NAMESPACE {
@@ -111,7 +131,7 @@ using namespace std;
 using namespace terark;
 
 profiling pf;
-extern json from_query_string(const char* qry);
+extern json from_query_string(const Slice);
 extern void mg_print_cur_time(mg_connection *conn);
 extern std::string cur_time_stat();
 std::string ReadPostData(mg_connection* conn);
@@ -1226,9 +1246,7 @@ class BasePostHttpHandler : public CivetHandler {
     std::string data = ReadPostData(conn);
     DcompactMeta meta;
     Logger* info_log = nullptr;
-#if defined(NDEBUG)
-    try {
-#endif
+    DCOMPACT_WORKER_TRY()
       meta.FromJsonStr(data);
       if (CHECK_CODE_REVISION >= 1 && meta.code_version != ROCKSDB_VERSION) {
         HttpErr(412, "ROCKSDB_VERSION Error: my = %d, req = %d", ROCKSDB_VERSION, meta.code_version);
@@ -1242,15 +1260,7 @@ class BasePostHttpHandler : public CivetHandler {
         return true;
       }
       doIt(meta, conn); // will not throw
-#if defined(NDEBUG)
-    }
-    catch (const std::exception& ex) {
-      HttpErr(412, "JsonParseError: %s", ex);
-    }
-    catch (const Status& s) {
-      HttpErr(412, "JsonParseError: Status: %s", s.ToString());
-    }
-#endif
+    DCOMPACT_WORKER_CATCH(data)
     return true;
   }
 };
@@ -1320,14 +1330,11 @@ static const char* StrDateTime(long long now_miros) {
 
 class ListHttpHandler : public CivetHandler {
  public:
-#if CIVETWEB_VERSION_MAJOR * 100000 + CIVETWEB_VERSION_MINOR * 100 >= 1*100000 + 15*100
-  using CivetHandler::handlePost;
-#endif
   bool handleGet(CivetServer* server, struct mg_connection* conn) override {
-#if defined(NDEBUG)
-    try {
-#endif
-      const mg_request_info* req = mg_get_request_info(conn);
+    const mg_request_info* req = mg_get_request_info(conn);
+    const Slice query_string = req->query_string;
+    Logger* info_log = nullptr;
+    DCOMPACT_WORKER_TRY()
       json query = from_query_string(req->query_string);
       bool html = JsonSmartBool(query, "html", true);
       terark::string_appender<> oss;
@@ -1415,31 +1422,18 @@ td {
         mg_printf(conn, "HTTP/1.1 200 OK\r\nContent-Type: text/json\r\n\r\n");
         mg_write(conn, oss.str());
       }
-#if defined(NDEBUG)
-    }
-    catch (std::exception& ex) {
-      mg_printf(conn, "Caught: %s\n", ex.what());
-    }
-    catch (const Status& s) {
-      mg_printf(conn, "Status: %s\n", s.ToString().c_str());
-    }
-    catch (...) {
-      mg_printf(conn, "Unknown Error\n");
-    }
-#endif
+    DCOMPACT_WORKER_CATCH(query_string)
     return true;
   }
 };
 
 class StatHttpHandler : public CivetHandler {
  public:
-#if CIVETWEB_VERSION_MAJOR * 100000 + CIVETWEB_VERSION_MINOR * 100 >= 1*100000 + 15*100
-  using CivetHandler::handlePost;
-#endif
   bool handleGet(CivetServer* server, struct mg_connection* conn) override {
-#if defined(NDEBUG)
-    try {
-#endif
+    const mg_request_info* req = mg_get_request_info(conn);
+    const Slice query_string = req->query_string;
+    Logger* info_log = nullptr;
+    DCOMPACT_WORKER_TRY()
       const mg_request_info* req = mg_get_request_info(conn);
       json query = from_query_string(req->query_string);
       json js;
@@ -1506,27 +1500,13 @@ class StatHttpHandler : public CivetHandler {
         mg_printf(conn, "HTTP/1.1 200 OK\r\nContent-Type: text/json\r\n\r\n");
         mg_write(conn, JsonToString(js, query));
       }
-#if defined(NDEBUG)
-    }
-    catch (std::exception& ex) {
-      mg_printf(conn, "Caught: %s\n", ex.what());
-    }
-    catch (const Status& s) {
-      mg_printf(conn, "Status: %s\n", s.ToString().c_str());
-    }
-    catch (...) {
-      mg_printf(conn, "Unknown Error\n");
-    }
-#endif
+    DCOMPACT_WORKER_CATCH(query_string)
     return true;
   }
 };
 
 class StopHttpHandler : public CivetHandler {
  public:
-#if CIVETWEB_VERSION_MAJOR * 100000 + CIVETWEB_VERSION_MINOR * 100 >= 1*100000 + 15*100
-  using CivetHandler::handlePost;
-#endif
   bool handleGet(CivetServer*, struct mg_connection* conn) override {
     g_stop = true;
     g_stop_cond.notify_one();
