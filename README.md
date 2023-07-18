@@ -104,6 +104,7 @@ Taking this script as an example, the script starts dcompact\_worker on the curr
 
 environment variable name | explanation
 -----------|---------
+TERMINATION\_CHECK\_URL|If the Cloud Server is `Spot Instance`, it will be in terminating state, most cloud vendor has http api for termination check, and return http 404 if it is in normal state, otherwise 200 for notify it is going to be terminated
 WORKER\_DB\_ROOT | The worker will create a directory for each attempt of each compact job sent by each hoster. The pseudo metadata and operation logs of the db will be saved in this directory. After the compaction successed, the data in this directory will be useless
 DEL\_WORKER\_TEMP\_DB| Referring to `WORKER_DB_ROOT`, when the corresponding compact is executed, whether to delete the corresponding directory.<br/>While after the execution of compact, the data in the corresponding directory is useless and can be deleted, it can still be retained for subsequent tracking
 NFS\_DYNAMIC\_MOUNT | 0 means that the system has mounted nfs<br/>1 means the system has not mounted nfs, and the dcompact\_worker process dynamically mounts the nfs specified in the http request

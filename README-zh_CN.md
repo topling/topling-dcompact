@@ -118,6 +118,7 @@ ulimit -n 100000
 
 环境变量名 | 解释说明
 -----------|---------
+TERMINATION\_CHECK\_URL|如果机器是竞价实例（Spot Instance），云厂商会提供 HTTP 接口来检查机器是否将要释放，正常状态下该 HTTP 会返回 404，在机器将要释放时，返回其它值（一般是 200）
 WORKER\_DB\_ROOT | worker 为每个 hoster 发过来的每个 compact job 的每个 attempt 都会创建一个目录，<br/>该目录中会保存 db 的 pseudo metadata 及运行日志，compact 成功之后该目录中的数据就没有用处了
 DEL\_WORKER\_TEMP\_DB| 参考 `WORKER_DB_ROOT`，当相应的 compact 执行完后，是否删除相应的目录，<br/>因为 compact 执行完之后，相应目录中的数据就没有用处了，可以删除，但是为了事后追踪，仍可保留
 NFS\_DYNAMIC\_MOUNT | 0 表示系统中已 mount nfs<br/>1 表示系统中未 mount nfs，由 dcompact\_worker 进程动态 mount http 请求中指定的 nfs
