@@ -32,6 +32,8 @@ using boost::intrusive_ptr;
 
 #include <filesystem>
 
+#include <curl/curl.h>
+
 #ifdef TOPLING_DCOMPACT_USE_ETCD
 #undef __declspec // defined in port_posix.h and etcd/Client.h's include
 #if defined(__clang__) || defined(__GNUC__) || defined(__GNUG__)
@@ -142,6 +144,50 @@ __attribute__((weak)) json JS_TopZipTable_Global_Stat(bool html);
 __attribute__((weak)) json JS_TopZipTable_Global_Env();
 extern const char* StrDateTimeNow(); // in builtin_table_factory.cc
 
+// defined in dcompact_etcd.cc
+extern size_t curl_my_recv(void* ptr, size_t, size_t len, void* userdata);
+std::pair<std::string, long> HttpGet(const std::string& urlstr) {
+  Logger* info_log = nullptr;
+  char errbuf[CURL_ERROR_SIZE];
+  CURL* curl = curl_easy_init();
+  std::string result_buf;
+  const char* url = urlstr.c_str();
+  curl_easy_setopt(curl, CURLOPT_MAXCONNECTS, 32L);
+  curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, errbuf);
+  curl_easy_setopt(curl, CURLOPT_TCP_FASTOPEN, 1L);
+  curl_easy_setopt(curl, CURLOPT_TCP_NODELAY, 1L);
+//curl_easy_setopt(curl, CURLOPT_TIMEOUT, 5L);
+  curl_easy_setopt(curl, CURLOPT_NOSIGNAL, true); // disable signal
+  curl_easy_setopt(curl, CURLOPT_URL, url);
+  curl_easy_setopt(curl, CURLOPT_WRITEDATA, &result_buf);
+  curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, &curl_my_recv);
+  result_buf.reserve(512);
+  auto err = curl_easy_perform(curl);
+  long http_code = -1;
+  if (err) {
+    size_t len = strlen(errbuf);
+    if (len && '\n' == errbuf[len - 1]) {
+      errbuf[--len] = '\0';
+    }
+    if (len) {
+      ERROR("libcurl: %s (%d): %s : %s", url, int(err), errbuf, result_buf);
+    }
+    else {
+      auto general_errmsg = curl_easy_strerror(err);
+      ERROR("libcurl: %s (%d): %s : %s", url, int(err), general_errmsg, result_buf);
+    }
+  }
+  else {
+    err = curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
+    if (err) {
+      auto general_errmsg = curl_easy_strerror(err);
+      ERROR("libcurl: %s (%d): %s : %s", url, int(err), general_errmsg, result_buf);
+    }
+  }
+  curl_easy_cleanup(curl);
+  return {std::move(result_buf), http_code};
+}
+
 static SidePluginRepo repo; // empty repo
 
 template<class Ptr>
@@ -219,6 +265,7 @@ static const bool NFS_DYNAMIC_MOUNT = getEnvBool("NFS_DYNAMIC_MOUNT", false);
 static const long MAX_PARALLEL_COMPACTIONS = getEnvLong("MAX_PARALLEL_COMPACTIONS", 0);
 static const long MAX_WAITING_COMPACTIONS = getEnvLong("MAX_WAITING_COMPACTIONS",
                                      std::thread::hardware_concurrency()*2);
+static const string TERMINATION_CHECK_URL = getEnvStr("TERMINATION_CHECK_URL", "");
 static const string WORKER_DB_ROOT = GetDirFromEnv("WORKER_DB_ROOT", "/tmp"); // NOLINT
 static const string NFS_MOUNT_ROOT = GetDirFromEnv("NFS_MOUNT_ROOT", "/mnt/nfs");
 static const string ADVERTISE_ADDR = getEnvStr("ADVERTISE_ADDR", "self");
@@ -290,8 +337,6 @@ static etcd::Client* g_etcd = nullptr;
 #endif
 
 static volatile bool           g_stop = false;
-static std::mutex              g_stop_mtx;
-static std::condition_variable g_stop_cond;
 
 using terark::util::concurrent_queue;
 struct QueueItem {
@@ -326,7 +371,8 @@ public:
 static AcceptedJobsMap g_acceptedJobs;
 static void work_thread_func() {
   while (!g_stop || g_acceptedJobs.peekSize() > 0) {
-    auto task = g_workQueue.pop_front_if([]{
+    QueueItem task;
+    bool has_task = g_workQueue.pop_front_if(task, []{
       auto running = g_jobsRunning.load(std::memory_order_relaxed);
       if (0 == running) {
         // if there is no running jobs, always return true, because
@@ -337,8 +383,10 @@ static void work_thread_func() {
         auto& front = g_workQueue.queue().front();
         return running + front.n_subcompacts <= MAX_PARALLEL_COMPACTIONS;
       }
-    });
-    task.func();
+    }, 1000/*timeout_ms*/);
+    if (has_task) {
+      task.func();
+    }
   }
 }
 
@@ -1509,7 +1557,6 @@ class StopHttpHandler : public CivetHandler {
  public:
   bool handleGet(CivetServer*, struct mg_connection* conn) override {
     g_stop = true;
-    g_stop_cond.notify_one();
     return true;
   }
 };
@@ -1596,18 +1643,23 @@ static int main(int argc, char* argv[]) {
   civet.addHandler("/stat", handle_stat);
   civet.addHandler("/stop", handle_stop); // stop process
   INFO("CivetServer setup ok, start work threads");
-  valvec<std::thread> work_threads(MAX_PARALLEL_COMPACTIONS-1, valvec_reserve());
+  valvec<std::thread> work_threads(MAX_PARALLEL_COMPACTIONS, valvec_reserve());
   for (size_t i = 0; i < work_threads.capacity(); ++i) {
     work_threads.unchecked_emplace_back(&work_thread_func);
   }
-  work_thread_func(); // use main thread as a work thread
+  if (!TERMINATION_CHECK_URL.empty()) {
+    while (!g_stop) { // check termination
+      auto [text, http_code] = HttpGet(TERMINATION_CHECK_URL);
+      if (http_code > 0 && http_code != 404) {
+        INFO("Cloud Server is terminating: %s", text);
+        g_stop = true;
+        break;
+      }
+      std::this_thread::sleep_for(std::chrono::seconds(10));
+    }
+  }
   for (auto& t : work_threads) t.join();
 
-  {
-    std::unique_lock<std::mutex> lock(g_stop_mtx);
-    g_stop_cond.wait(lock, []() { return g_stop; });
-    TERARK_VERIFY(g_stop);
-  }
   mg_exit_library();
 #ifdef TOPLING_DCOMPACT_USE_ETCD
   delete g_etcd;

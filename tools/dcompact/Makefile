@@ -1,4 +1,5 @@
-LDFLAGS :=-Wl,-unresolved-symbols=ignore-in-shared-libs
+LDFLAGS := -Wl,-unresolved-symbols=ignore-in-shared-libs
+LDFLAGS += -lcurl
 
 ifeq (${TOPLING_DCOMPACT_USE_ETCD},1)
 INCS := \
