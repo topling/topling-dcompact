@@ -603,6 +603,14 @@ class DcompactEtcdExecFactory final : public CompactExecFactoryCommon {
       return;
     }
     bool html = JsonSmartBool(dump_options, "html", true);
+    if (html) {
+      const auto document =
+        "<a href='https://github.com/topling/topling-dcompact/blob/main/README.md'>Document(English)</a>"
+        " | "
+        "<a href='https://github.com/topling/topling-dcompact/blob/main/README-zh_CN.md'>文档(中文)</a>"
+        ;
+      ROCKSDB_JSON_SET_PROP(djs, document);
+    }
     ROCKSDB_JSON_SET_TMPL(djs, compaction_executor_factory);
     char buf[64];
     djs["estimate_speed"] = ToStr("%.3f MB/sec", estimate_speed/1e6);
