@@ -1560,6 +1560,20 @@ class StopHttpHandler : public CivetHandler {
     return true;
   }
 };
+class HealthHttpHandler : public CivetHandler {
+ public:
+  bool handleGet(CivetServer*, struct mg_connection* conn) override {
+    mg_write(conn, "HTTP/1.1 200 OK\r\nContent-Type: text/json\r\n\r\n"
+                   "{\"status\": \"OK\"}");
+    return true;
+  }
+#if CIVETWEB_VERSION_MAJOR * 100000 + CIVETWEB_VERSION_MINOR * 100 >= 1*100000 + 15*100
+  using CivetHandler::handlePost;
+#endif
+  bool handlePost(CivetServer* server, struct mg_connection* conn) override {
+    return handleGet(server, conn);
+  }
+};
 
 static int main(int argc, char* argv[]) {
   SetAsCompactionWorker();
@@ -1636,12 +1650,14 @@ static int main(int argc, char* argv[]) {
   ListHttpHandler handle_list;
   StatHttpHandler handle_stat;
   StopHttpHandler handle_stop;
+  HealthHttpHandler handle_health;
   civet.addHandler("/dcompact", handle_dcompact);
   civet.addHandler("/shutdown", handle_shutdown);
   civet.addHandler("/probe", handle_probe);
   civet.addHandler("/list", handle_list);
   civet.addHandler("/stat", handle_stat);
   civet.addHandler("/stop", handle_stop); // stop process
+  civet.addHandler("/health", handle_health);
   INFO("CivetServer setup ok, start work threads");
   valvec<std::thread> work_threads(MAX_PARALLEL_COMPACTIONS, valvec_reserve());
   for (size_t i = 0; i < work_threads.capacity(); ++i) {
