@@ -106,7 +106,7 @@ do { \
 #define VERIFY_S_EQ(x, y) VERIFY_S(x == y, "%s %s", x, y)
 
 #if defined(NDEBUG)
-  #define DCOMPACT_WORKER_TRY() try {
+  #define DCOMPACT_WORKER_TRY(...) __VA_ARGS__ try {
   #define DCOMPACT_WORKER_CATCH(text)  } \
     catch (const json::exception& ex) { \
       HttpErr(412, "json::exception: %s, " #text " = {len=%zd: %s}", ex.what(), text.size(), text); \
@@ -121,7 +121,7 @@ do { \
       HttpErr(412, "Unknown Error, " #text " = {len=%zd: %s}", text.size(), text); \
     }
 #else
-  #define DCOMPACT_WORKER_TRY()
+  #define DCOMPACT_WORKER_TRY(...)
   #define DCOMPACT_WORKER_CATCH(text)
 #endif
 
@@ -1381,9 +1381,8 @@ class ListHttpHandler : public CivetHandler {
   bool handleGet(CivetServer* server, struct mg_connection* conn) override {
     const mg_request_info* req = mg_get_request_info(conn);
     const Slice query_string = req->query_string;
-    Logger* info_log = nullptr;
-    DCOMPACT_WORKER_TRY()
-      json query = from_query_string(req->query_string);
+    DCOMPACT_WORKER_TRY(Logger* info_log = nullptr;)
+      json query = from_query_string(query_string);
       bool html = JsonSmartBool(query, "html", true);
       terark::string_appender<> oss;
       oss.reserve(64*1024);
@@ -1480,10 +1479,8 @@ class StatHttpHandler : public CivetHandler {
   bool handleGet(CivetServer* server, struct mg_connection* conn) override {
     const mg_request_info* req = mg_get_request_info(conn);
     const Slice query_string = req->query_string;
-    Logger* info_log = nullptr;
-    DCOMPACT_WORKER_TRY()
-      const mg_request_info* req = mg_get_request_info(conn);
-      json query = from_query_string(req->query_string);
+    DCOMPACT_WORKER_TRY(Logger* info_log = nullptr;)
+      json query = from_query_string(query_string);
       json js;
       bool html = JsonSmartBool(query, "html", true);
       int verbose = JsonSmartInt(query, "verbose", 1);
