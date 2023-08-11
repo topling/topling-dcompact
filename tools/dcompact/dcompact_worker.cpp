@@ -277,7 +277,19 @@ int mount_nfs(const DcompactMeta& meta, mg_connection* conn, Logger* info_log) {
   const string  target = MakePath(NFS_MOUNT_ROOT, meta.instance_name);
   if (mkdir(target.c_str(), 0777) < 0) {
     int err = errno;
-    if (EEXIST != err) {
+    if (EEXIST == err) {
+      if (umount2(target.c_str(), MNT_FORCE) < 0) {
+        int err = errno;
+        if (EINVAL == err) {
+          // EINVAL indicate target is not a mount point
+        } else {
+          ERROR("job-%05d/att-%02d: umount(%s) failed = %d(%#X) : %s",
+                meta.job_id, meta.attempt, target, err, err, strerror(err));
+        }
+        // ignore errors and continue try mount
+      }
+    }
+    else {
       HttpErr(412, "job-%05d/att-%02d: mount prepare mkdir(%s, 0777) = %s",
               meta.job_id, meta.attempt, target, strerror(err));
       return err;
@@ -1823,7 +1835,6 @@ static void RunOneJob(const DcompactMeta& meta, mg_connection* conn) noexcept {
     return;
   }
   g_jobsAccepting.fetch_add(1, std::memory_order_relaxed);
-  TERARK_SCOPE_EXIT(g_jobsAccepting.fetch_sub(1, std::memory_order_relaxed));
   auto t1 = pf.now();
   size_t lru_handle = size_t(-1);
   if (NFS_DYNAMIC_MOUNT) {
@@ -1832,6 +1843,7 @@ static void RunOneJob(const DcompactMeta& meta, mg_connection* conn) noexcept {
     if (err) {
       g_jobsWaiting.fetch_sub(n_subcompacts, std::memory_order_relaxed);
       g_jobsPreFailed.fetch_add(1, std::memory_order_relaxed);
+      g_jobsAccepting.fetch_sub(1, std::memory_order_relaxed);
       return; // error was reported in ensure_mnt
     }
   }
@@ -1840,24 +1852,36 @@ static void RunOneJob(const DcompactMeta& meta, mg_connection* conn) noexcept {
   string outFname = MakePath(attempt_dir, "rpc.results");
   FILE* in = fopen(inFname.c_str(), "rb");
   if (!in) {
-    HttpErr(412, "fopen(%s, rb) = %s", inFname, strerror(errno));
     g_jobsWaiting.fetch_sub(n_subcompacts, std::memory_order_relaxed);
     g_jobsPreFailed.fetch_add(1, std::memory_order_relaxed);
+    g_jobsAccepting.fetch_sub(1, std::memory_order_relaxed);
+    int err = errno;
+    if (NFS_DYNAMIC_MOUNT && ESTALE == err) {
+      // will call umount2
+      mount_nfs(meta, conn, info_log); // treat fail even success
+    }
+    HttpErr(412, "fopen(%s, rb) = %s", inFname, strerror(err));
     return;
   }
   auto t3 = pf.now();
   FILE* out = fopen(outFname.c_str(), "wb");
   if (!out) {
-    fclose(in);
-    HttpErr(412, "fopen(%s, wb) = %s", outFname, strerror(errno));
     g_jobsWaiting.fetch_sub(n_subcompacts, std::memory_order_relaxed);
     g_jobsPreFailed.fetch_add(1, std::memory_order_relaxed);
+    g_jobsAccepting.fetch_sub(1, std::memory_order_relaxed);
+    int err = errno;
+    fclose(in);
+    if (NFS_DYNAMIC_MOUNT && ESTALE == err) {
+      mount_nfs(meta, conn, info_log); // treat fail even success
+    }
+    HttpErr(412, "fopen(%s, wb) = %s", outFname, strerror(err));
     return;
   }
   auto t4 = pf.now();
   INFO("accept %s : fopen(rpc.params) = %.6f sec, fopen(rpc.results) = %.6f sec",
        attempt_dir, pf.sf(t2, t3), pf.sf(t3, t4));
   g_acceptedJobs.add(j.get());
+  g_jobsAccepting.fetch_sub(1, std::memory_order_relaxed);
   j->accept_time = j->env->NowMicros();
   mg_printf(conn, "HTTP/1.1 200 OK\r\n"
                   "Content-type: text\r\n\r\n"
