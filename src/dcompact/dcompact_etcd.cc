@@ -10,6 +10,7 @@
 #include <terark/util/atomic.hpp>
 #include <terark/util/function.hpp>
 #include <terark/util/linebuf.hpp>
+#include <terark/util/process.hpp>
 #include <terark/lcast.hpp>
 #include <terark/valvec.hpp>
 
@@ -470,7 +471,8 @@ class DcompactEtcdExecFactory final : public CompactExecFactoryCommon {
   std::string nfs_type = "nfs"; // default is nfs, can be glusterfs...
   std::string nfs_mnt_src;
   std::string nfs_mnt_opt = "noatime";
-  std::string report_url;
+  std::string alert_email;
+  std::string alert_http;
   std::string web_domain; // now just for iframe auto height
   std::string m_start_time;
   std::string m_start_time_iso; // for ReportFee
@@ -525,6 +527,8 @@ class DcompactEtcdExecFactory final : public CompactExecFactoryCommon {
       m_start_time_iso.shrink_to_fit();
     }
     CompactExecFactoryCommon::init(js, repo);
+    ROCKSDB_JSON_OPT_PROP(js, alert_email);
+    ROCKSDB_JSON_OPT_PROP(js, alert_http);
     ROCKSDB_JSON_OPT_PROP(js, web_domain);
     ROCKSDB_JSON_OPT_PROP(js, etcd_root);
     Update(js);
@@ -622,6 +626,8 @@ class DcompactEtcdExecFactory final : public CompactExecFactoryCommon {
     ROCKSDB_JSON_SET_PROP(djs, http_max_retry);
     ROCKSDB_JSON_SET_PROP(djs, max_book_dbcf);
     ROCKSDB_JSON_SET_PROP(djs, retry_sleep_time);
+    ROCKSDB_JSON_SET_PROP(djs, alert_email);
+    ROCKSDB_JSON_SET_PROP(djs, alert_http);
     ROCKSDB_JSON_SET_PROP(djs, web_domain);
     djs[html ? R"(<a href='javascript:SetParam("cols","3")'>workers</a>)" : "workers"]
         = HttpParams::DumpVecToJson(http_workers, html);
@@ -664,12 +670,15 @@ class DcompactEtcdExec : public CompactExecCommon {
   std::string m_labour_id;
   std::string m_full_server_id;
   string_appender<> m_url;
+  DcompactMeta meta;
   uint64_t m_input_raw_key_bytes = 0;
   uint64_t m_input_raw_val_bytes = 0;
   uint64_t m_start_ts = 0;
   uint64_t input_raw_bytes() const {
     return m_input_raw_key_bytes + m_input_raw_val_bytes;
   }
+  void PostHttp(const std::string& urlstr, fstring body);
+  void AlertDcompactFail(const Status&);
  public:
   explicit DcompactEtcdExec(const DcompactEtcdExecFactory* fac);
   Status SubmitHttp(const fstring action, const std::string& meta_jstr, size_t nth_http) noexcept;
@@ -678,6 +687,39 @@ class DcompactEtcdExec : public CompactExecCommon {
   void CleanFiles(const CompactionParams&, const CompactionResults&) override;
   void ReportFee(const CompactionParams&, const CompactionResults&);
 };
+
+void DcompactEtcdExec::AlertDcompactFail(const Status& s) {
+  auto f = static_cast<const DcompactEtcdExecFactory*>(m_factory);
+  if (f->alert_email.empty() && f->alert_http.empty()) {
+    return;
+  }
+  string_appender<> title;
+  title|"instance "|f->instance_name|": dcompact fail, ";
+  if (f->allow_fallback_to_local) {
+    title|"fallback to local";
+  } else {
+    title|"die because allow_fallback_to_local is false";
+  }
+  json bjs;
+  bjs["title"] = title;
+  bjs["status"] = s.ToString();
+  bjs["last_url"] = m_url;
+  bjs["instance_name"] = f->instance_name;
+  bjs["full_server_id"] = m_full_server_id;
+  bjs["labour_id"] = m_labour_id;
+  bjs["meta"] = meta.ToJsonObj();
+  std::string body = bjs.dump();
+  if (!f->alert_email.empty()) {
+    std::string cmd = "mail -s '" + title + "' " + f->alert_email;
+    std::string res = vfork_cmd(cmd, body).get();
+    if (!res.empty()) {
+      INFO("cmd %s output %s", cmd, res);
+    }
+  }
+  if (!f->alert_http.empty()) {
+    PostHttp(f->alert_http, body);
+  }
+}
 
 Status DcompactEtcdExec::Execute(const CompactionParams& params,
                                        CompactionResults* results)
@@ -696,6 +738,7 @@ Status DcompactEtcdExec::Execute(const CompactionParams& params,
     else if (s.IsBusy())
       m_env->SleepForMicroseconds(f->retry_sleep_time * 1000000);
   }
+  AlertDcompactFail(s);
   if (!m_factory->allow_fallback_to_local) {
     TERARK_DIE_S("Fail with MaxRetry = %d, die: %s", m_attempt, s.ToString());
   }
@@ -737,7 +780,6 @@ try
   key.reserve(256);
   key|f->instance_name|"/"|f->m_start_time|"/"|dbname;
   key^"/job-%05d"^params.job_id^"/att-%02d"^m_attempt;
-  DcompactMeta meta;
   meta.n_subcompacts = params.max_subcompactions;
   meta.n_listeners = (uint16_t)params.listeners.size();
   meta.n_prop_coll_factory = (uint16_t)params.table_properties_collector_factories.size();
@@ -1052,6 +1094,58 @@ size_t curl_my_recv(void* ptr, size_t, size_t len, void* userdata) {
   auto* str = (std::string*)userdata;
   str->append((const char*)ptr, len);
   return len;
+}
+
+void DcompactEtcdExec::PostHttp(const std::string& urlstr, fstring body) {
+  char errbuf[CURL_ERROR_SIZE];
+  CURL* curl = curl_easy_init();
+  std::string result_buf;
+  const char* url = urlstr.c_str();
+  curl_easy_setopt(curl, CURLOPT_MAXCONNECTS, 32L);
+  curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, errbuf);
+  curl_easy_setopt(curl, CURLOPT_TCP_FASTOPEN, 1L);
+  curl_easy_setopt(curl, CURLOPT_TCP_NODELAY, 1L);
+  curl_easy_setopt(curl, CURLOPT_TIMEOUT, 2L);
+  curl_easy_setopt(curl, CURLOPT_NOSIGNAL, true); // disable signal
+  curl_easy_setopt(curl, CURLOPT_URL, url);
+  curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body.data());
+  curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, body.size());
+  curl_easy_setopt(curl, CURLOPT_WRITEDATA, &result_buf);
+  curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, &curl_my_recv);
+  auto headers = curl_slist_append(nullptr, "Content-Type: application/json");
+  curl_slist_append(headers, "Expect:");
+  curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+  TERARK_SCOPE_EXIT(curl_slist_free_all(headers));
+  result_buf.reserve(512);
+  auto err = curl_easy_perform(curl);
+  if (err) {
+    size_t len = strlen(errbuf);
+    if (len && '\n' == errbuf[len - 1]) {
+      errbuf[--len] = '\0';
+    }
+    if (len) {
+      Err("libcurl: %s (%d): %s : %s : %s", url, int(err), errbuf, body, result_buf);
+    }
+    else {
+      auto general_errmsg = curl_easy_strerror(err);
+      Err("libcurl: %s (%d): %s : %s : %s", url, int(err), general_errmsg, body, result_buf);
+    }
+  }
+  else {
+    long response_code = 500; // set default as internal error
+    err = curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &response_code);
+    if (err) {
+      auto general_errmsg = curl_easy_strerror(err);
+      Err("libcurl: %s (%d): %s : %s : %s", url, int(err), general_errmsg, body, result_buf);
+    }
+    else if (200 == response_code) { // 200 OK
+      DEBG("PostHttpRequest: 200 OK: uri = %s, body = %s, response = %s", url, body, result_buf);
+    }
+    else {
+      Err("libcurl: %s : response_code = %ld : %s", url, response_code, result_buf);
+    }
+  }
+  curl_easy_cleanup(curl);
 }
 
 Status DcompactEtcdExec::SubmitHttp(const fstring action,
