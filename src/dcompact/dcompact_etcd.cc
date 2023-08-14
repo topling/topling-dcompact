@@ -11,8 +11,10 @@
 #include <terark/util/function.hpp>
 #include <terark/util/linebuf.hpp>
 #include <terark/util/process.hpp>
+#include <terark/util/refcount.hpp>
 #include <terark/lcast.hpp>
 #include <terark/valvec.hpp>
+#include <boost/intrusive_ptr.hpp>
 
 #ifdef TOPLING_DCOMPACT_USE_ETCD
 #undef __declspec // defined in port_posix.h and etcd/Client.h's include
@@ -461,6 +463,20 @@ struct DcompactFeeReport {
 };
 
 ROCKSDB_ENUM_CLASS(LoadBalanceType, int, kRoundRobin, kWeight);
+/* DONT make it too complex
+struct AlertMetaShare : RefCounter {
+  std::string labour_id;
+  std::string full_server_id;
+};
+constexpr auto CmpAlertMetaShared = TERARK_CMP_P(labour_id, full_server_id);
+using AlertMetaSharePtr = boost::intrusive_ptr<AlertMetaShare>;
+struct AlertMeta {
+  int job_id;
+  int attempt;
+  time_t alert_time;
+  AlertMetaSharePtr alert_meta;
+};
+*/
 
 class DcompactEtcdExecFactory final : public CompactExecFactoryCommon {
  public:
@@ -473,6 +489,7 @@ class DcompactEtcdExecFactory final : public CompactExecFactoryCommon {
   std::string nfs_mnt_opt = "noatime";
   std::string alert_email;
   std::string alert_http;
+  uint32_t    alert_interval = 60; // seconds
   std::string web_domain; // now just for iframe auto height
   std::string m_start_time;
   std::string m_start_time_iso; // for ReportFee
@@ -494,6 +511,11 @@ class DcompactEtcdExecFactory final : public CompactExecFactoryCommon {
   etcd::Client* m_etcd = nullptr;
   json m_etcd_js;
 #endif
+
+  mutable uint64_t m_last_alert_time_us = 0;
+  // std::mutex m_alert_mtx;
+  // std::set<AlertMetaSharePtr, decltype(CmpAlertMetaShared)>
+  //   m_alert_share_set{CmpAlertMetaShared};
 
   // round robin http_workers, to avoid a http load balancer.
   // http_workers url can also be a proxy or load balancer, thus forms a
@@ -529,6 +551,7 @@ class DcompactEtcdExecFactory final : public CompactExecFactoryCommon {
     CompactExecFactoryCommon::init(js, repo);
     ROCKSDB_JSON_OPT_PROP(js, alert_email);
     ROCKSDB_JSON_OPT_PROP(js, alert_http);
+    ROCKSDB_JSON_OPT_PROP(js, alert_interval);
     ROCKSDB_JSON_OPT_PROP(js, web_domain);
     ROCKSDB_JSON_OPT_PROP(js, etcd_root);
     Update(js);
@@ -628,6 +651,7 @@ class DcompactEtcdExecFactory final : public CompactExecFactoryCommon {
     ROCKSDB_JSON_SET_PROP(djs, retry_sleep_time);
     ROCKSDB_JSON_SET_PROP(djs, alert_email);
     ROCKSDB_JSON_SET_PROP(djs, alert_http);
+    ROCKSDB_JSON_SET_PROP(djs, alert_interval);
     ROCKSDB_JSON_SET_PROP(djs, web_domain);
     djs[html ? R"(<a href='javascript:SetParam("cols","3")'>workers</a>)" : "workers"]
         = HttpParams::DumpVecToJson(http_workers, html);
@@ -693,6 +717,13 @@ void DcompactEtcdExec::AlertDcompactFail(const Status& s) {
   if (f->alert_email.empty() && f->alert_http.empty()) {
     return;
   }
+  uint64_t now = f->m_env->NowMicros();
+  uint64_t prev = f->m_last_alert_time_us;
+  if (now < prev + f->alert_interval * 1000000) {
+    INFO("Skip alert: job-%05d/att-%02d", meta.job_id, m_attempt);
+    return;
+  }
+  f->m_last_alert_time_us = now;
   string_appender<> title;
   title|"instance "|f->instance_name|": dcompact fail, ";
   if (f->allow_fallback_to_local) {
