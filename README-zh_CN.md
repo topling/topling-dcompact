@@ -67,7 +67,7 @@ http_timeout       | int    |  3 | 单位秒，http 连接的超时时间，一�
 timeout_multiplier | int    | 10 | dcompact 执行时间超过预估时间的这么多倍时，会认为超时失败并重试
 estimate_speed     | size   | 10M | 预估的单个 compact 吞吐率，该值会随着时间自动调整，用来计算预估的 compact 执行时间及超时时间
 load_balance       | enum   | kRoundRobin | 可选值有 {kRoundRobin, kWeight}，表示多个 http_workers 的选择方式
-max_book_dbcf      | int    | 20 | 如果进程运行中对临时 DB 进行 dcompact，max_book_dbcf 表示最多显示多少个最近活动的 DB
+max_book_dbcf      | int    | 20 | 如果进程运行中对临时 DB 进行 dcompact，max_book_dbcf 表示最多保留多少个最近活动的 DB 记录（WebView 中 **stat** 字段）
 http_workers       | string<br/>或<br/>object| 空 | 多个（至少一个）http url, 以 `//` 开头的会被跳过，相当于是被注释掉了<br/> 末尾的 `//end_http_workers` 是为了 `start_workers.sh` 脚本服务的，不能删除<br/>**注意**: 必须至少定义一个 worker, 否则 DB 启动时会主动 abort
 dcompact_min_level | int    |  2 | 只有在 Compact Output Level 大于等于该值时，才使用分布式 compact，小于该值时使用本地 compact
 alert_email        | string | 空 | 重试次数到达 http_max_retry 但分布式 Compact 仍然失败时，发送 email 报警
