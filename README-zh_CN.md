@@ -97,11 +97,11 @@ web_url | string | 无 | 在浏览器中通过 stat 查看状态，以及查看 
 weight  | string | 无 | http_workers 包含多个服务器时，配置每个服务器的权重，派发 compact 时按权重等比例选择，权重仅在 http_workers 包含多个服务器时有用，表示不同服务器之间的相对值。例如权重 100 比权重 50 多一倍的入选机会，从而承担的计算量也多一倍
 
 #### 最佳实践
-建议仅定义 url = `http://some.host`，不定义 base_url，此时：
+应该只定义 url = `http://some.host`，不定义 base_url，此时：
 * 生效的 base_url = `http://some.host`
 * 生效的 url = `http://some.host/dcompact`
 
-在公网环境中，web_url 可定义为一个不同于生效的 base_url，用于服务浏览器，而生效的 base_url 用于服务 dcompact 命令。
+在公网环境中，web_url 可定义为不同于生效的 base_url，用于服务浏览器，而生效的 base_url 用于服务 dcompact 命令。
 
 #### 历史原因导致的复杂性
 用户可以不用关心该复杂性，仅遵循最佳实践即可
