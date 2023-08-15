@@ -9,6 +9,7 @@
 #include <db/error_handler.h>
 #include <logging/logging.h>
 #include <options/options_helper.h> // for BuildDBOptions
+#include <rocksdb/listener.h>
 #include <rocksdb/merge_operator.h>
 #include <terark/io/FileStream.hpp>
 #include <terark/lru_map.hpp>
@@ -271,6 +272,62 @@ static const string NFS_MOUNT_ROOT = GetDirFromEnv("NFS_MOUNT_ROOT", "/mnt/nfs")
 static const string ADVERTISE_ADDR = getEnvStr("ADVERTISE_ADDR", "self");
 static const char* WEB_DOMAIN = getenv("WEB_DOMAIN");
 static const bool MULTI_PROCESS = getEnvBool("MULTI_PROCESS", false);
+
+static time_t g_lastActivityTime = 0;
+static time_t g_lastSuccessTime = 0;
+using  SystemTimePoint = FileOperationInfo::SystemTimePoint;
+static SystemTimePoint g_lastFileOpenCloseTime{};
+static SystemTimePoint g_lastFileReadWriteTime{};
+class ActivityListener : public EventListener {
+  pid_t m_parent = MULTI_PROCESS ? getppid() : -1;
+  void UpdateLastActivityTime() {
+    g_lastActivityTime = ::time(nullptr);
+    if (m_parent > 0)
+      process_obj_write(m_parent, g_lastActivityTime);
+  }
+  void UpdateSysTimeObj(SystemTimePoint& tp, const SystemTimePoint& now) {
+    tp = now;
+    if (m_parent > 0)
+      process_obj_write(m_parent, tp);
+  }
+  void UpdateWithFileOp(SystemTimePoint& tp, const FileOperationInfo& info) {
+    UpdateSysTimeObj(tp, info.start_ts + info.duration);
+  }
+public:
+  void OnSubcompactionBegin(const SubcompactionJobInfo&) override {
+    UpdateLastActivityTime();
+  }
+  void OnSubcompactionCompleted(const SubcompactionJobInfo&) {
+    UpdateLastActivityTime();
+  }
+  void OnTableFileCreated(const TableFileCreationInfo&) {
+    UpdateSysTimeObj(g_lastFileOpenCloseTime, std::chrono::system_clock::now());
+  }
+  void OnTableFileCreationStarted(const TableFileCreationBriefInfo&) {
+    UpdateSysTimeObj(g_lastFileOpenCloseTime, std::chrono::system_clock::now());
+  }
+  void OnFileReadFinish(const FileOperationInfo& info) {
+    UpdateWithFileOp(g_lastFileReadWriteTime, info);
+  }
+  void OnFileWriteFinish(const FileOperationInfo& info) {
+    UpdateWithFileOp(g_lastFileReadWriteTime, info);
+  }
+  void OnFileFlushFinish(const FileOperationInfo& info) {
+    UpdateWithFileOp(g_lastFileReadWriteTime, info);
+  }
+  void OnFileSyncFinish(const FileOperationInfo& info) {
+    UpdateWithFileOp(g_lastFileReadWriteTime, info);
+  }
+  void OnFileRangeSyncFinish(const FileOperationInfo& info) {
+    UpdateWithFileOp(g_lastFileReadWriteTime, info);
+  }
+  void OnFileTruncateFinish(const FileOperationInfo& info) {
+    UpdateWithFileOp(g_lastFileOpenCloseTime, info);
+  }
+  void OnFileCloseFinish(const FileOperationInfo& info) {
+    UpdateWithFileOp(g_lastFileOpenCloseTime, info);
+  }
+};
 
 int mount_nfs(const DcompactMeta& meta, mg_connection* conn, Logger* info_log) {
   const string& source = meta.nfs_mnt_src;
@@ -857,6 +914,7 @@ int RunCompact(FILE* in, FILE* out) const {
 //const size_t n_listeners = params.listeners.size();
   const size_t n_listeners = m_meta.n_listeners;
   params.listeners.resize(n_listeners);
+  imm_dbo.listeners.reserve(n_listeners + 1); // for ActivityListener
   imm_dbo.listeners.resize(n_listeners);
   for (size_t i = 0; i < n_listeners; i++) {
     MyCreatePlugin1(imm_dbo, listeners[i]);
@@ -899,6 +957,7 @@ int RunCompact(FILE* in, FILE* out) const {
     process_mem_write(getppid(), inputBytes, sizeof(inputBytes));
   }
   imm_dbo.listeners.clear(); // ignore event listener on worker
+  imm_dbo.listeners.push_back(std::make_shared<ActivityListener>());
   imm_dbo.advise_random_on_open = false;
   imm_dbo.allow_fdatasync = false;
   imm_dbo.allow_fallocate = false;
@@ -1199,6 +1258,10 @@ auto writeObjResult = [&]{
     if (!s.ok()) {
       ERROR("compaction_job.Install(%s) = %s", attempt_dir, s.ToString());
       return 0;
+    }
+    if (MULTI_PROCESS) {
+      g_lastActivityTime = ::time(nullptr);
+      process_obj_write(getppid(), g_lastActivityTime);
     }
   }
   log_buffer.FlushBufferToLog();
@@ -1831,6 +1894,24 @@ static void RunOneJob(const DcompactMeta& meta, mg_connection* conn) noexcept {
   if (running + waiting >= limit) {
     g_jobsWaiting.fetch_sub(n_subcompacts, std::memory_order_relaxed);
     g_jobsRejected.fetch_add(1, std::memory_order_relaxed);
+    time_t now = ::time(nullptr);
+    using namespace std::chrono;
+    auto now_ns = system_clock::now();
+    if (g_lastSuccessTime != 0 && g_lastSuccessTime + 900 < now) {
+      ERROR("last success job is %ld sec ago, running = %ld, waiting = %ld, accepting = %ld, "
+            "lastActivity is %ld sec ago, "
+            "lastFileOpenClose is %.6f sec ago, lastFileReadWrite is %.6f sec ago, "
+            "some thing goes wrong, exit process with code 1"
+          , now - g_lastSuccessTime, running, waiting, g_jobsAccepting.load()
+          , now - g_lastActivityTime
+          , duration_cast<nanoseconds>(now_ns - g_lastFileOpenCloseTime).count() / 1e9
+          , duration_cast<nanoseconds>(now_ns - g_lastFileReadWriteTime).count() / 1e9
+          );
+      // std::thread thr(&::exit, 1); // exit may stuck
+      // std::this_thread::sleep_for(seconds(10));
+      // stuck in ::exit, now force exit by ::_exit
+      ::_exit(1); // force exit
+    }
     HttpErr(503, "%s : server busy, running jobs = %ld, waiting = %zd", attempt_dir, running, waiting);
     return;
   }
@@ -1936,12 +2017,14 @@ static void RunOneJob(const DcompactMeta& meta, mg_connection* conn) noexcept {
           ERROR("%s: waitpid(pid=%d) = {status = %d, err = %m}", attempt_dir, pid, status);
         } else if (WIFEXITED(status)) {
           DEBG("%s: waitpid(pid=%d) exit with status = %d", attempt_dir, pid, WEXITSTATUS(status));
+          g_lastSuccessTime = ::time(nullptr);
         } else if (WIFSIGNALED(status)) {
           if (WCOREDUMP(status))
             WARN("%s: waitpid(pid=%d) coredump by signal %d", attempt_dir, pid, WTERMSIG(status));
           else
             WARN("%s: waitpid(pid=%d) killed by signal %d", attempt_dir, pid, WTERMSIG(status));
           DeleteTempFiles(pid, info_log);
+          g_lastSuccessTime = ::time(nullptr);
         } else if (WIFSTOPPED(status)) {
           WARN("%s: waitpid(pid=%d) stop signal = %d", attempt_dir, pid, WSTOPSIG(status));
         } else if (WIFCONTINUED(status)) {
@@ -1953,6 +2036,7 @@ static void RunOneJob(const DcompactMeta& meta, mg_connection* conn) noexcept {
     }
     else {
       run();
+      g_lastSuccessTime = ::time(nullptr);
     }
 
     j->NotifyEtcd();
