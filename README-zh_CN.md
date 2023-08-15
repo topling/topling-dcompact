@@ -11,7 +11,7 @@
 3. 同一个 worker 可以同时为多个 hoster 服务，同一个 hoster 也可以把自己的 compact 任务发给多个 worker 执行
 4. 编译 ToplingDB 时，本模块(topling-dcompact)由 ToplingDB 的 Makefile 中从 github 自动 clone 下来
 
-用户自定义的插件，例如 MergeOperator, CompactionFilter 等需要编译成动态库，运行 dcompact\_worker.exe 时通过 LD\_PRELOAD 加载。使用这种方式，相同进程可以加载多个不同的动态库，从而为多个不同的 DB 提供 compact 服务，例如 [MyTopling](https://github.com/topling/mytopling) 和 [Todis](https://github.com/topling/todis) 就使用这种方式共享相同的 dcompact\_worker 进程。
+用户自定义的插件，例如 MergeOperator, CompactionFilter 等需要编译成动态库，运行 dcompact\_worker.exe 时通过 LD\_PRELOAD 加载。使用这种方式，相同进程可以加载多个不同的动态库，从而为多个不同的 DB 提供 compact 服务，例如 [MyTopling(MySQL)](https://github.com/topling/mytopling) 和 [Todis(Redis)](https://github.com/topling/todis) 就使用这种方式共享相同的 dcompact\_worker 进程。
 
 > 分布式 Compact 的实现类名是 DcompactEtcd，这是因为 ToplingDB 分布式 Compact 最初是通过 etcd-cpp-api 使用 etcd 用作 Hoster 与 Worker 的交互，后来因为 etcd-cpp-api 的 [bug #78](https://github.com/etcd-cpp-apiv3/etcd-cpp-apiv3/issues/78) 而不得不弃用 etcd。目前 etcd 相关代码已经无用，仅有 DcompactEtcd 作为类名保留下来。
 
@@ -65,6 +65,10 @@
 `http_timeout` | int | 3 | 单位秒，http 连接的超时时间，一般情况下，超时即意味着出错
 `http_workers` | string<br/>或<br/>object| 空 | 多个（至少一个）http url, 以 `//` 开头的会被跳过，相当于是被注释掉了<br/> 末尾的 `//end_http_workers` 是为了 `start_workers.sh` 脚本服务的，不能删除<br/>**注意**: 必须至少定义一个 worker, 否则 DB 启动时会主动 abort
 `dcompact_min_level` | int | 2 | 只有在 Compact Output Level 大于等于该值时，才使用分布式 compact，小于该值时使用本地 compact
+alert_email    | string | 空 | 重试次数到达 http_max_retry 但分布式 Compact 仍然失败时，发送 email 报警
+alert_http     | string | 空 | 重试次数到达 http_max_retry 但分布式 Compact 仍然失败时，向此 http 发送 POST 报警
+alert_interval | int    | 60 | 如果频繁失败，且每次都报警，报警信息会洪水泛滥，所以每隔这么长时间（单位：**秒**），才报警一次
+web_domain     | string | 空 | 在浏览器中，多个 compact_worker 的状态以 iframe 方式内嵌在页面中，web_domain 用来实现自动调整 iframe 高度（JavaScript 需要跨域权限）
 
 <!--
 属性名 | 解释说明（ETCD 相关配置，已经过时无用）
@@ -78,11 +82,32 @@ etcd   | etcd 的连接选项，默认无认证，需要认证的话，有两种
 
 在公网（例如云计算）环境下，worker 隐藏在反向代理/负载均衡后面，为此增加了几个配置字段：
 
-字段名| 说明
-------|------
-url | 提交 compact job
-base_url | probe 查询 compact job 或 shutdown 指定 compact job
-web_url | 在浏览器中通过 stat 查看状态，以及查看 log 文件
+字段名| 类型 | 默认值 | 说明
+------|------|------|-----
+url | string | 无 | 提交 compact job
+base_url | string | 无 | probe 查询 compact job 或 shutdown 指定 compact job
+web_url | string | 无 | 在浏览器中通过 stat 查看状态，以及查看 log 文件。如果未定义，使用 base_url
+weight  | string | 无 | http_workers 包含多个服务器时，配置每个服务器的权重，派发 compact 时按权重等比例选择，权重仅在 http_workers 包含多个服务器时有用，表示不同服务器之间的相对值。例如权重 100 比权重 50 多一倍的入选机会，从而承担的计算量也多一倍
+
+#### 最佳实践
+建议仅定义 url = http://some.host，不定义 base_url，此时：
+* 生效的 base_url = http://some.host
+* 生效的 url = http://some.host/dcompact
+
+在公网环境中，web_url 可定义为一个不同于生效的 base_url，用于服务浏览器，而生效的 base_url 用于服务 dcompact 命令。
+
+#### 历史原因导致的复杂性
+用户可以不用关心该复杂性，仅遵循最佳实践即可
+1. url 与 base_url 必须至少定义其中之一
+   * 生效的 url 一定形如 http://some.host/dcompact
+   * 生效的 base_url 一定形如 http://some.host
+1. 如果定义 base_url，则必须形如 http://some.host (或 https)
+1. 如果定义 url，则必须形如 http://some.host/dcompact 或 http://some.host (或 https)
+1. 如果已定义 base_url，但未定义 url，则生效的 url = "${base_url}/dcompact"
+1. 如果未定义 base_url，但已定义 url
+   * 如果 url 形如 http://some.host/dcompact 则 url 保持不变
+   * 如果 url 形如 http://some.host 则生效的 url 为 http://some.host/dcompact
+   * 生效的 base_url 从生效的 url 推导为 http://some.host
 
 ### 1.4. 注意事项
 CFOptions 的 `level_compaction_dynamic_level_bytes` 务必显示指定为 `false`，为 `true` 时，很可能会跳过 L1，直接 compact 到 L**n**，产生很大的单个 compact 并且无法利用 `max_level1_subcompactions` 配置的并发，导致长时间的卡顿。
