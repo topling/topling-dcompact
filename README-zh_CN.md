@@ -54,21 +54,28 @@
 
 属性名  | 类型 | 默认值 | 解释说明
 -------|:----:|-------|--------
-`allow_fallback_to_local`| bool |false | 如果分布式 Compact 失败，是否允许回退到本地 Compact
-`hoster_root` | string | 空 | 该 db 的根目录，一般设置为与 DB::Open 中的 `path` 变量相同。
-`instance_name` | string | 空 | 该 db 实例名，在多租户场景下，CompactWorker 结点使用 instance\_name 区分不同的 db 实例
-`nfs_type`      | string | 空 | NFS 类型，空表示 `nfs`, 也可以是 `glusterfs`, `smbfs` 等等
-`nfs_mnt_src`   | string | 空 | NFS 挂载源
-`nfs_mnt_opt`   | string | 空 | NFS 挂载选项
-`http_max_retry`  | int  | 3 | 最大重试次数
-`overall_timeout` | int  |5 | 单位秒，单个分布式 Compact 任务的单次执行尝试(attempt)从头至尾耗时的超时时间
-`http_timeout` | int | 3 | 单位秒，http 连接的超时时间，一般情况下，超时即意味着出错
-`http_workers` | string<br/>或<br/>object| 空 | 多个（至少一个）http url, 以 `//` 开头的会被跳过，相当于是被注释掉了<br/> 末尾的 `//end_http_workers` 是为了 `start_workers.sh` 脚本服务的，不能删除<br/>**注意**: 必须至少定义一个 worker, 否则 DB 启动时会主动 abort
-`dcompact_min_level` | int | 2 | 只有在 Compact Output Level 大于等于该值时，才使用分布式 compact，小于该值时使用本地 compact
-alert_email    | string | 空 | 重试次数到达 http_max_retry 但分布式 Compact 仍然失败时，发送 email 报警
-alert_http     | string | 空 | 重试次数到达 http_max_retry 但分布式 Compact 仍然失败时，向此 http 发送 POST 报警
-alert_interval | int    | 60 | 如果频繁失败，且每次都报警，报警信息会洪水泛滥，所以每隔这么长时间（单位：**秒**），才报警一次
-web_domain     | string | 空 | 在浏览器中，多个 compact_worker 的状态以 iframe 方式内嵌在页面中，web_domain 用来实现自动调整 iframe 高度（JavaScript 需要跨域权限）
+allow_fallback_to_local| bool |false | 如果分布式 Compact 失败，是否允许回退到本地 Compact
+hoster_root        | string | 空 | 该 db 的根目录，一般设置为与 DB::Open 中的 `path` 变量相同。
+instance_name      | string | 空 | 该 db 实例名，在多租户场景下，CompactWorker 结点使用 instance\_name 区分不同的 db 实例
+nfs_type           | string | 空 | NFS 类型，空表示 `nfs`, 也可以是 `glusterfs`, `smbfs` 等等
+nfs_mnt_src        | string | 空 | NFS 挂载源
+nfs_mnt_opt        | string | 空 | NFS 挂载选项
+http_max_retry     | int    |  3 | 最大重试次数
+retry_sleep_time   | int    |  1 | 单位秒，如果重试原因是服务器繁忙，则睡眠这么长时间再进行重试，避免重试太过频繁
+overall_timeout    | int    |  5 | 单位秒，单个分布式 Compact 任务的单次执行尝试(attempt)从头至尾耗时的超时时间
+http_timeout       | int    |  3 | 单位秒，http 连接的超时时间，一般情况下，超时即意味着出错
+timeout_multiplier | int    | 10 | dcompact 执行时间超过预估时间的这么多倍时，会认为超时失败并重试
+estimate_speed     | size   | 10M | 预估的单个 compact 吞吐率，该值会随着时间自动调整，用来计算预估的 compact 执行时间及超时时间
+load_balance       | enum   | kRoundRobin | 可选值有 {kRoundRobin, kWeight}，表示多个 http_workers 的选择方式
+max_book_dbcf      | int    | 20 | 如果进程运行中对临时 DB 进行 dcompact，max_book_dbcf 表示最多显示多少个最近活动的 DB
+http_workers       | string<br/>或<br/>object| 空 | 多个（至少一个）http url, 以 `//` 开头的会被跳过，相当于是被注释掉了<br/> 末尾的 `//end_http_workers` 是为了 `start_workers.sh` 脚本服务的，不能删除<br/>**注意**: 必须至少定义一个 worker, 否则 DB 启动时会主动 abort
+dcompact_min_level | int    |  2 | 只有在 Compact Output Level 大于等于该值时，才使用分布式 compact，小于该值时使用本地 compact
+alert_email        | string | 空 | 重试次数到达 http_max_retry 但分布式 Compact 仍然失败时，发送 email 报警
+alert_http         | string | 空 | 重试次数到达 http_max_retry 但分布式 Compact 仍然失败时，向此 http 发送 POST 报警
+alert_interval     | int    | 60 | 如果频繁失败，且每次都报警，报警信息会洪水泛滥，所以每隔这么长时间（单位：**秒**），才报警一次
+web_domain         | string | 空 | 在浏览器中，多个 compact_worker 的状态以 iframe 方式内嵌在页面中，web_domain 用来实现自动调整 iframe 高度（JavaScript 需要跨域权限）
+
+以上 int, bool, enum, size 类型的参数可以通过 http 在线修改。
 
 <!--
 属性名 | 解释说明（ETCD 相关配置，已经过时无用）
@@ -90,24 +97,24 @@ web_url | string | 无 | 在浏览器中通过 stat 查看状态，以及查看 
 weight  | string | 无 | http_workers 包含多个服务器时，配置每个服务器的权重，派发 compact 时按权重等比例选择，权重仅在 http_workers 包含多个服务器时有用，表示不同服务器之间的相对值。例如权重 100 比权重 50 多一倍的入选机会，从而承担的计算量也多一倍
 
 #### 最佳实践
-建议仅定义 url = http://some.host，不定义 base_url，此时：
-* 生效的 base_url = http://some.host
-* 生效的 url = http://some.host/dcompact
+建议仅定义 url = `http://some.host`，不定义 base_url，此时：
+* 生效的 base_url = `http://some.host`
+* 生效的 url = `http://some.host/dcompact`
 
 在公网环境中，web_url 可定义为一个不同于生效的 base_url，用于服务浏览器，而生效的 base_url 用于服务 dcompact 命令。
 
 #### 历史原因导致的复杂性
 用户可以不用关心该复杂性，仅遵循最佳实践即可
 1. url 与 base_url 必须至少定义其中之一
-   * 生效的 url 一定形如 http://some.host/dcompact
-   * 生效的 base_url 一定形如 http://some.host
-1. 如果定义 base_url，则必须形如 http://some.host (或 https)
-1. 如果定义 url，则必须形如 http://some.host/dcompact 或 http://some.host (或 https)
+   * 生效的 url 一定形如 `http://some.host/dcompact`
+   * 生效的 base_url 一定形如 `http://some.host`
+1. 如果定义 base_url，则必须形如 `http://some.host` (或 https)
+1. 如果定义 url，则必须形如 `http://some.host/dcompact` 或 `http://some.host` (或 https)
 1. 如果已定义 base_url，但未定义 url，则生效的 url = "${base_url}/dcompact"
 1. 如果未定义 base_url，但已定义 url
-   * 如果 url 形如 http://some.host/dcompact 则 url 保持不变
-   * 如果 url 形如 http://some.host 则生效的 url 为 http://some.host/dcompact
-   * 生效的 base_url 从生效的 url 推导为 http://some.host
+   * 如果 url 形如 `http://some.host/dcompact` 则 url 保持不变
+   * 如果 url 形如 `http://some.host` 则生效的 url 为 `http://some.host/dcompact`
+   * 生效的 base_url 从生效的 url 推导为 `http://some.host`
 
 ### 1.4. 注意事项
 CFOptions 的 `level_compaction_dynamic_level_bytes` 务必显示指定为 `false`，为 `true` 时，很可能会跳过 L1，直接 compact 到 L**n**，产生很大的单个 compact 并且无法利用 `max_level1_subcompactions` 配置的并发，导致长时间的卡顿。
