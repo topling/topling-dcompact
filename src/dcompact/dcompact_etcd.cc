@@ -551,7 +551,6 @@ class DcompactEtcdExecFactory final : public CompactExecFactoryCommon {
     CompactExecFactoryCommon::init(js, repo);
     ROCKSDB_JSON_OPT_PROP(js, alert_email);
     ROCKSDB_JSON_OPT_PROP(js, alert_http);
-    ROCKSDB_JSON_OPT_PROP(js, alert_interval);
     ROCKSDB_JSON_OPT_PROP(js, web_domain);
     ROCKSDB_JSON_OPT_PROP(js, etcd_root);
     Update(js);
@@ -681,6 +680,7 @@ class DcompactEtcdExecFactory final : public CompactExecFactoryCommon {
     ROCKSDB_JSON_OPT_ENUM(js, load_balance);
     ROCKSDB_JSON_OPT_PROP(js, max_book_dbcf);
     ROCKSDB_JSON_OPT_PROP(js, retry_sleep_time);
+    ROCKSDB_JSON_OPT_PROP(js, alert_interval);
     maximize(overall_timeout, http_timeout);
   }
 };
