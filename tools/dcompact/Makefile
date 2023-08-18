@@ -1,5 +1,5 @@
-LDFLAGS := -Wl,-unresolved-symbols=ignore-in-shared-libs
-LDFLAGS += -lcurl
+LIBS := -Wl,-unresolved-symbols=ignore-in-shared-libs
+LIBS += -lcurl
 
 ifeq (${TOPLING_DCOMPACT_USE_ETCD},1)
 INCS := \
@@ -9,7 +9,7 @@ INCS := \
   -I../../../../../vcpkg/packages/grpc_x64-linux/include \
   -I../../../../../vcpkg/packages/protobuf_x64-linux/include
 
-LDFLAGS += -L../../3rdparty/etcd-cpp-apiv3/build/src -letcd-cpp-api
+LIBS += -L../../3rdparty/etcd-cpp-apiv3/build/src -letcd-cpp-api
 endif
 
 include exe-common.mk
