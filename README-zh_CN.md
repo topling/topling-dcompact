@@ -160,6 +160,9 @@ ADVERTISE\_ADDR | 该参数会通过 dcompact 请求的 response 返回给 Hoste
 WEB\_DOMAIN | 用于 dcompact worker web view iframe 的自适应高度
 MULTI\_PROCESS | 如果使用 ToplingDB 的程序及其 CompactionFilter/EventHandler 等插件使用了全局变量，就无法在同一个进程中执行来自多个 DB 实例的 Compact 任务，此时，将 MULTI\_PROCESS 设为 true 可以通过多进程的方式运行 Compact
 ZIP\_SERVER\_OPTIONS | ToplingZipTable 环境变量，当 MULTI\_PROCESS 为 true 时，设置 ZipServer 的 http 参数，例如：<br/>`export ZIP_SERVER_OPTIONS=listening_ports=8090:num_threads=32`
+FEE_URL | 发送计费信息的 url
+LABOUR_ID | 计费信息中的 labourId，一般是 dcompact_worker 所在的主机名（hostname）
+CLOUD_PROVIDER | 计费信息中的 provider
 
 注意：对于同一个 hoster 实例，该 hoster 上的 db 数据的路径和 worker 上访问该 hoster 的 db 数据的路径一般是不同的。因为两者的 mount path 很难达成一致，所以，worker 上的环境变量 NFS\_MOUNT\_ROOT 和 hoster 上的 json 变量 `hoster_root` 及 `instance_name` 共同协作，完成这个路径的映射关系。
 

@@ -78,6 +78,26 @@ struct DcompactMeta {
   std::string ToJsonStr() const;
 };
 
+struct DcompactFeeReport {
+  std::string provider;   // cloud provider
+  std::string instanceId; // DB instance
+  std::string labourId;   // dcompact worker/labour id
+  std::string dbId;
+  std::string dbStarts;
+  std::string starts; // compact 起始时间
+  size_t executesMs;  // compact 执行时长
+  int compactionJobId;
+  int attempt;
+
+  uint64_t compactionInputRawBytes;
+  uint64_t compactionInputZipBytes;
+  uint64_t compactionOutputRawBytes;
+  uint64_t compactionOutputZipBytes;
+//std::string jsonInfo;
+
+  json ToJson() const;
+};
+
 void SerDeRead(FILE*, CompactionParams*);
 void SerDeRead(FILE*, CompactionResults*);
 void SerDeRead(Slice, CompactionResults*);

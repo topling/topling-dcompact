@@ -428,39 +428,23 @@ struct DcompactFeeConfig {
   }
 };
 
-struct DcompactFeeReport {
-  std::string provider;
-  std::string instanceId;
-  std::string dbId;
-  std::string dbStarts;
-  std::string starts; // compact 起始时间
-  size_t executesMs;  // compact 执行时长
-  int compactionJobId;
-  int attempt;
-
-  uint64_t compactionInputRawBytes;
-  uint64_t compactionInputZipBytes;
-  uint64_t compactionOutputRawBytes;
-  uint64_t compactionOutputZipBytes;
-//std::string jsonInfo;
-
-  json ToJson() const {
-    json djs;
-    ROCKSDB_JSON_SET_PROP(djs, provider);
-    ROCKSDB_JSON_SET_PROP(djs, instanceId);
-    ROCKSDB_JSON_SET_PROP(djs, dbId);
-    ROCKSDB_JSON_SET_PROP(djs, dbStarts);
-    ROCKSDB_JSON_SET_PROP(djs, starts);
-    ROCKSDB_JSON_SET_PROP(djs, executesMs);
-    ROCKSDB_JSON_SET_PROP(djs, compactionJobId);
-    ROCKSDB_JSON_SET_PROP(djs, attempt);
-    ROCKSDB_JSON_SET_PROP(djs, compactionInputRawBytes);
-    ROCKSDB_JSON_SET_PROP(djs, compactionInputZipBytes);
-    ROCKSDB_JSON_SET_PROP(djs, compactionOutputRawBytes);
-    ROCKSDB_JSON_SET_PROP(djs, compactionOutputZipBytes);
-    return djs;
-  }
-};
+json DcompactFeeReport::ToJson() const {
+  json djs;
+  ROCKSDB_JSON_SET_PROP(djs, provider);
+  ROCKSDB_JSON_SET_PROP(djs, instanceId);
+  ROCKSDB_JSON_SET_PROP(djs, labourId);
+  ROCKSDB_JSON_SET_PROP(djs, dbId);
+  ROCKSDB_JSON_SET_PROP(djs, dbStarts);
+  ROCKSDB_JSON_SET_PROP(djs, starts);
+  ROCKSDB_JSON_SET_PROP(djs, executesMs);
+  ROCKSDB_JSON_SET_PROP(djs, compactionJobId);
+  ROCKSDB_JSON_SET_PROP(djs, attempt);
+  ROCKSDB_JSON_SET_PROP(djs, compactionInputRawBytes);
+  ROCKSDB_JSON_SET_PROP(djs, compactionInputZipBytes);
+  ROCKSDB_JSON_SET_PROP(djs, compactionOutputRawBytes);
+  ROCKSDB_JSON_SET_PROP(djs, compactionOutputZipBytes);
+  return djs;
+}
 
 ROCKSDB_ENUM_CLASS(LoadBalanceType, int, kRoundRobin, kWeight);
 /* DONT make it too complex

@@ -114,6 +114,9 @@ ADVERTISE\_ADDR | This parameter will be returned to the Hoster through the resp
 WEB\_DOMAIN | Adaptive height for dcompact worker web view iframe
 MULTI\_PROCESS | If the program using ToplingDB and its plug-ins such as CompactionFilter/EventHandler use global variables, it is impossible to execute Compact tasks from multiple DB instances in the same process. At this time, set MULTI_PROCESS to true to run Compact through multiple processes.
 ZIP\_SERVER\_OPTIONS | ToplingZipTable environment variable. when MULTI_PROCESS is true, it set the http parameters of ZipServer. For example:<br/>`export ZIP_SERVER_OPTIONS=listening_ports=8090:num_threads=32`
+FEE_URL | url for fee
+LABOUR_ID | fee.labourId, normally the host name of dcompact worker
+CLOUD_PROVIDER | fee.provider
 
 Note: For the same hoster instance, the path of the db data on the hoster and the path of accessing the db data of the hoster on the worker are generally different. Because it is difficult to agree on the mount path between the two, the environment variable NFS_MOUNT_ROOT on the worker and the json variables `hoster_root` and `instance_name` on the hoster work together to complete the mapping relationship of this path.
 

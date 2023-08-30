@@ -189,6 +189,55 @@ std::pair<std::string, long> HttpGet(const std::string& urlstr) {
   return {std::move(result_buf), http_code};
 }
 
+std::pair<std::string, long>
+HttpPost(const std::string& urlstr, const std::string& body, Logger* info_log) {
+  char errbuf[CURL_ERROR_SIZE];
+  CURL* curl = curl_easy_init();
+  std::string result_buf; result_buf.reserve(512);
+  const char* url = urlstr.c_str();
+  curl_easy_setopt(curl, CURLOPT_MAXCONNECTS, 32L);
+  curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, errbuf);
+  curl_easy_setopt(curl, CURLOPT_TCP_FASTOPEN, 1L);
+  curl_easy_setopt(curl, CURLOPT_TCP_NODELAY, 1L);
+//curl_easy_setopt(curl, CURLOPT_TIMEOUT, 5L);
+  curl_easy_setopt(curl, CURLOPT_NOSIGNAL, true); // disable signal
+  curl_easy_setopt(curl, CURLOPT_URL, url);
+  curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body.data());
+  curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, body.size());
+  curl_easy_setopt(curl, CURLOPT_WRITEDATA, &result_buf);
+  curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, &curl_my_recv);
+  auto headers = curl_slist_append(nullptr, "Content-Type: application/json");
+  curl_slist_append(headers, "Expect:");
+  curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+  TERARK_SCOPE_EXIT(curl_slist_free_all(headers));
+  long http_code = -1;
+  auto err = curl_easy_perform(curl);
+  if (err) {
+    size_t len = strlen(errbuf);
+    if (len && '\n' == errbuf[len - 1]) {
+      errbuf[--len] = '\0';
+    }
+    if (len) {
+      ERROR("HttpPost: %s (%d): %s : %s : %s", url, int(err), errbuf, body, result_buf);
+    } else {
+      auto general_errmsg = curl_easy_strerror(err);
+      ERROR("HttpPost: %s (%d): %s : %s : %s", url, int(err), general_errmsg, body, result_buf);
+    }
+  } else {
+    err = curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
+    if (err) {
+      auto general_errmsg = curl_easy_strerror(err);
+      ERROR("HttpPost: %s (%d): %s : %s : %s", url, int(err), general_errmsg, body, result_buf);
+    } else if (200 == http_code) { // 200 OK
+      DEBG("HttpPost: 200 OK: url = %s, body = %s, response = %s", url, body, result_buf);
+    } else {
+      ERROR("HttpPost: %s : http_code = %ld : %s", url, http_code, result_buf);
+    }
+  }
+  curl_easy_cleanup(curl);
+  return {std::move(result_buf), http_code};
+}
+
 static SidePluginRepo repo; // empty repo
 
 template<class Ptr>
@@ -270,6 +319,9 @@ static const string TERMINATION_CHECK_URL = getEnvStr("TERMINATION_CHECK_URL", "
 static const string WORKER_DB_ROOT = GetDirFromEnv("WORKER_DB_ROOT", "/tmp"); // NOLINT
 static const string NFS_MOUNT_ROOT = GetDirFromEnv("NFS_MOUNT_ROOT", "/mnt/nfs");
 static const string ADVERTISE_ADDR = getEnvStr("ADVERTISE_ADDR", "self");
+static const string FEE_URL = getEnvStr("FEE_URL", "");
+static const string LABOUR_ID = getEnvStr("LABOUR_ID", "");
+static const string CLOUD_PROVIDER = getEnvStr("CLOUD_PROVIDER", "");
 static const char* WEB_DOMAIN = getenv("WEB_DOMAIN");
 static const bool MULTI_PROCESS = getEnvBool("MULTI_PROCESS", false);
 
@@ -1306,6 +1358,24 @@ auto writeObjResult = [&]{
       ERROR("%s : %s", compact_done_file, errmsg);
     }
     //INFO("after close(compact.done)");
+    if (!FEE_URL.empty()) {
+      DcompactFeeReport fee;
+      fee.provider = CLOUD_PROVIDER;
+      fee.dbId = params.db_id;
+      fee.attempt = m_meta.attempt;
+      fee.dbStarts = m_meta.start_time;
+      for (char& c: fee.dbStarts) if ('.' == c) c = ':';
+      fee.executesMs = results->work_time_usec / 1000;
+      fee.instanceId = m_meta.instance_name;
+      fee.labourId = LABOUR_ID;
+      fee.compactionJobId = params.job_id;
+      fee.compactionInputRawBytes = inputBytes[0];
+      fee.compactionInputZipBytes = inputBytes[1];
+      fee.compactionOutputRawBytes = 0;
+      fee.compactionOutputZipBytes = results->compaction_stats.bytes_written;
+      std::string fee_body = fee.ToJson().dump();
+      HttpPost(FEE_URL, fee_body, info_log);
+    }
   }
 
   return 0;
