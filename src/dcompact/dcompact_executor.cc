@@ -267,10 +267,25 @@ DATA_IO_LOAD_SAVE_E(CompactionResults,
                   & waiting_time_usec
                   )
 
+struct CompactionParamsJS : CompactionParams {
+  void parse_extensible_js_data() {
+    if (extensible_js_data.empty())
+      return;
+    json js = json::parse(extensible_js_data);
+    ROCKSDB_JSON_OPT_PROP(js, level_compaction_dynamic_file_size);
+  }
+  void update_extensible_js_data() {
+    json js;
+    ROCKSDB_JSON_SET_PROP(js, level_compaction_dynamic_file_size);
+    extensible_js_data = js.dump();
+  }
+};
+
 void SerDeRead(FILE* fp, CompactionParams* p) {
   using namespace terark;
   LittleEndianDataInput<NonOwnerFileStream> dio(fp);
   dio >> *p;
+  static_cast<CompactionParamsJS*>(p)->parse_extensible_js_data();
   if (SidePluginRepo::DebugLevel() >= 4)
     ROCKS_LOG_INFO(p->info_log, "%s", p->DebugString().c_str());
   p->is_deserialized = true;
@@ -460,6 +475,8 @@ void CompactExecCommon::SetParams(CompactionParams* params, const Compaction* c)
   params->smallest_seqno = c->GetSmallestSeqno();
   params->hoster_root = m_factory->hoster_root;
   params->instance_name = m_factory->instance_name;
+  params->level_compaction_dynamic_file_size = imm_cfo.level_compaction_dynamic_file_size;
+  static_cast<CompactionParamsJS*>(params)->update_extensible_js_data();
 
   TRAC("CompactExecCommon::SetParams():\n%s", params->DebugString());
 }

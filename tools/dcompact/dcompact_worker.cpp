@@ -1024,6 +1024,7 @@ int RunCompact(FILE* in, FILE* out) const {
     imm_dbo.db_paths.emplace_back(GetWorkerNodePath(x.path), x.target_size);
   }
   imm_dbo.db_paths.emplace_back(attempt_dir, UINT64_MAX);
+  cfo.level_compaction_dynamic_file_size = params.level_compaction_dynamic_file_size;
   cfo.num_levels = params.num_levels;
   cfo.cf_paths = imm_dbo.db_paths;
   cfo.compaction_style = params.compaction_style;
@@ -1120,6 +1121,7 @@ int RunCompact(FILE* in, FILE* out) const {
     icfo->info_log = imm_dbo.info_log;
     icfo->info_log_level = imm_dbo.info_log_level;
     icfo->statistics = imm_dbo.statistics;
+    icfo->level_compaction_dynamic_file_size = params.level_compaction_dynamic_file_size;
     //icfo->allow_mmap_reads = true; // not need any more
   }
   {
