@@ -2031,8 +2031,8 @@ static void RunOneJob(const DcompactMeta& meta, mg_connection* conn) noexcept {
     return;
   }
   auto t4 = pf.now();
-  INFO("accept %s : fopen(rpc.params) = %.6f sec, fopen(rpc.results) = %.6f sec",
-       attempt_dir, pf.sf(t2, t3), pf.sf(t3, t4));
+  INFO("accept %s : n_subcompacts = %d, fopen(rpc.params) = %.6f sec, fopen(rpc.results) = %.6f sec",
+       attempt_dir, n_subcompacts, pf.sf(t2, t3), pf.sf(t3, t4));
   g_acceptedJobs.add(j.get());
   g_jobsAccepting.fetch_sub(1, std::memory_order_relaxed);
   j->accept_time = j->env->NowMicros();
