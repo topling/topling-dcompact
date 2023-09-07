@@ -1376,7 +1376,9 @@ auto writeObjResult = [&]{
       fee.compactionInputZipBytes = inputBytes[1];
       fee.compactionOutputRawBytes = 0;
       fee.compactionOutputZipBytes = results->compaction_stats.bytes_written;
-      std::string fee_body = fee.ToJson().dump();
+      auto js = fee.ToJson();
+      js["headers"] = m_http_headers;
+      std::string fee_body = js.dump();
       HttpPost(FEE_URL, fee_body, info_log);
     }
   }
@@ -1938,6 +1940,8 @@ try {
 void NotifyEtcd() const {}
 #endif
 
+json m_http_headers;
+
 static void RunOneJob(const DcompactMeta& meta, mg_connection* conn) noexcept {
   if (!Slice(meta.output_root).starts_with(meta.hoster_root)) {
     Logger* info_log = nullptr;
@@ -1951,6 +1955,13 @@ static void RunOneJob(const DcompactMeta& meta, mg_connection* conn) noexcept {
     return;
   }
   intrusive_ptr<Job> j = new Job(meta);
+  if (!FEE_URL.empty()) {
+    const mg_request_info* req = mg_get_request_info(conn);
+    for (int i = 0; i < req->num_headers; i++) {
+      auto& kv = req->http_headers[i];
+      j->m_http_headers[kv.name] = kv.value;
+    }
+  }
   const string old_prefix = meta.hoster_root;
   const string new_prefix = MakePath(NFS_MOUNT_ROOT, meta.instance_name);
   const string worker_dir = ReplacePrefix(old_prefix, new_prefix, meta.output_root);
