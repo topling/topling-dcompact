@@ -804,6 +804,7 @@ void ShowCompactionParams(const CompactionParams& p, Version* const v,
   js["compaction"]["compression_opts"]["enabled"] = p.compression_opts.enabled;
   js["compaction"]["compression_opts"]["max_dict_buffer_bytes"] =
       p.compression_opts.max_dict_buffer_bytes;
+  js["compaction"]["level_compaction_dynamic_file_size"] = p.level_compaction_dynamic_file_size;
 
   size_t jcp_row = 1 + 7 +
                    (p.table_properties_collector_factories.empty()
