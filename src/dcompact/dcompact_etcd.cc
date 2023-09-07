@@ -1712,7 +1712,7 @@ worker->m_running_mtx.unlock();
     str^"/<span title='estimate speed = %.3f MB/sec'>"^speed_mbps;
     str^"%6.2f"^estimate_sec^" sec</span> ";
     str|"<a href='"|web_url|"/"|instance_name|"/"|m_start_time|"/"|dbname|"/"|job_attempt|"/summary.html"|"?labour="|labour_id|"'>";
-    str^"%5.3f GB"^wl.job_input_raw_bytes/1e9;
+    str^"%6.3f GB"^wl.job_input_raw_bytes/1e9;
     str|"</a> ";
     str|"<a href='"|web_url|"/"|instance_name|"/"|m_start_time|"/"|dbname|"/"|"?labour="|labour_id|"'>"|dbname|"</a>/";
     str|"<a href='"|web_url|"/"|instance_name|"/"|m_start_time|"/"|dbname|"/"|job_attempt|"/"|"?labour="|labour_id|"'>"|job_attempt|"</a>/";
