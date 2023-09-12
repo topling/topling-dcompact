@@ -657,6 +657,13 @@ CompactExecCommon::~CompactExecCommon() {
   as_atomic(m_factory->num_live_exec).fetch_sub(1, std::memory_order_relaxed);
 }
 
+void CompactExecFactoryToJson(const CompactionExecutorFactory* fac,
+                              const json& dump_options, json& djs,
+                              const SidePluginRepo& repo) {
+  if (auto dc = dynamic_cast<const CompactExecFactoryCommon*>(fac)) {
+    dc->ToJson(dump_options, djs, repo);
+  }
+}
 struct CompactExecFactoryCommon_Manip :
           PluginManipFunc<CompactionExecutorFactory> {
   void Update(CompactionExecutorFactory* p, const json&, const json& js,
