@@ -1278,7 +1278,9 @@ Status DcompactEtcdExec::SubmitHttp(const fstring action,
           if (cookie.starts_with("SERVERID=")) {
             if (action != "/dcompact") {
               auto sep = cookie.strchr('|');
-              TERARK_VERIFY_S(nullptr != sep, "bad cookie = %s", cookie);
+              if (nullptr == sep) {
+                Err("curl %s : meta = %s, bad cookie = %s", url, meta_jstr, cookie);
+              }
               size_t len = sep - cookie.data();
               if (cookie.commonPrefixLen(m_full_server_id) < len)
                 Err("curl %s : 200 OK meta = %s, mismatch: (%s) != (%s)",
