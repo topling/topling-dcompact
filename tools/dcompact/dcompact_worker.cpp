@@ -1276,6 +1276,7 @@ auto writeObjResult = [&]{
       dst.largest_seqno = src.fd.largest_seqno;
       dst.smallest_ikey = src.smallest;
       dst.largest_ikey = src.largest;
+      dst.marked_for_compaction = src.marked_for_compaction;
     }
   }
   results->output_dir = GetHosterNodePath(attempt_dir);
