@@ -463,8 +463,31 @@ using terark::util::concurrent_queue;
 struct QueueItem {
   std::function<void()> func;
   uint32_t n_subcompacts;
+  const class Job* m_job;
+  double score(long long now) const;
+  struct CmpScore {
+    long long now = pf.now();
+    bool operator()(const QueueItem& x, const QueueItem& y) const {
+      return x.score(now) < y.score(now);
+    }
+  };
 };
-static concurrent_queue<circular_queue<QueueItem> > g_workQueue;
+#if 1
+struct WaitQueue : std::list<QueueItem> {
+  void update_priority() {
+    auto iter = std::max_element(begin(), end(), QueueItem::CmpScore());
+    if (iter != begin()) { // move max score item to front
+      this->splice(begin(), *this, iter);
+    }
+  }
+  void init(size_t) {} // do nothing, conform to circular_queue
+};
+#else
+struct WaitQueue : circular_queue<QueueItem> {
+  void update_priority() {}
+};
+#endif
+static concurrent_queue<WaitQueue> g_workQueue;
 static std::atomic<size_t> g_jobsWaiting{0};
 
 static string_appender<> BuildMetaKey(const DcompactMeta& meta) {
@@ -494,6 +517,7 @@ static void work_thread_func() {
   while (!g_stop || g_acceptedJobs.peekSize() > 0) {
     QueueItem task;
     bool has_task = g_workQueue.pop_front_if(task, []{
+      g_workQueue.queue().update_priority();
       auto running = g_jobsRunning.load(std::memory_order_relaxed);
       if (0 == running) {
         // if there is no running jobs, always return true, because
@@ -2049,6 +2073,7 @@ static void RunOneJob(const DcompactMeta& meta, mg_connection* conn) noexcept {
   g_acceptedJobs.add(j.get());
   g_jobsAccepting.fetch_sub(1, std::memory_order_relaxed);
   j->accept_time = j->env->NowMicros();
+  j->m_job_creation_time = t4; // for QueueItem::score()
   mg_printf(conn, "HTTP/1.1 200 OK\r\n"
                   "Content-type: text\r\n\r\n"
                   R"({"status": "ok", "addr": "%s"})",
@@ -2133,8 +2158,10 @@ static void RunOneJob(const DcompactMeta& meta, mg_connection* conn) noexcept {
     g_jobsRunning.fetch_sub(n_subcompacts, std::memory_order_relaxed);
     g_acceptedJobs.del(j.get());
     //INFO("after g_acceptedJobs.del");
-  }, n_subcompacts});
+  }, n_subcompacts, j.get()});
 }
+
+long long m_job_creation_time;
 
 static void DeleteTempFiles(pid_t pid, Logger* info_log) {
   if (!GetZipServerPID) {
@@ -2176,6 +2203,15 @@ static void DeleteTempFiles(pid_t pid, Logger* info_log) {
 }
 
 }; // class Job
+
+double QueueItem::score(long long now) const {
+  double score = now - m_job->m_job_creation_time; // more wait, higher score
+  // estimate_time_us is proportional to input size, larger to lower score
+  score /= m_job->m_meta.estimate_time_us ? : 1;
+  score /= pow(1.618, m_job->m_meta.output_level); // deeper level to lower score
+  score *= m_job->m_meta.attempt + 1; // should consider attempt?
+  return score;
+}
 
 std::pair<size_t, bool>
 AcceptedJobsMap::add(Job* j) noexcept {

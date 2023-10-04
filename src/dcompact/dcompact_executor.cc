@@ -713,6 +713,7 @@ void DcompactMeta::FromJsonObj(const json& js) {
   ROCKSDB_JSON_OPT_PROP(js, estimate_time_us);
   ROCKSDB_JSON_REQ_PROP(js, job_id);
   ROCKSDB_JSON_REQ_PROP(js, attempt);
+  ROCKSDB_JSON_OPT_PROP(js, output_level);
 }
 void DcompactMeta::FromJsonStr(const std::string& jstr) {
   json js = json::parse(jstr);
@@ -743,6 +744,7 @@ json DcompactMeta::ToJsonObj() const {
   ROCKSDB_JSON_SET_PROP(js, estimate_time_us);
   ROCKSDB_JSON_SET_PROP(js, job_id);
   ROCKSDB_JSON_SET_PROP(js, attempt);
+  ROCKSDB_JSON_SET_PROP(js, output_level);
   return js;
 }
 std::string DcompactMeta::ToJsonStr() const {

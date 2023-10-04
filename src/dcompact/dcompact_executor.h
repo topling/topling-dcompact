@@ -72,6 +72,7 @@ struct DcompactMeta {
   size_t   estimate_time_us = 0;
   int job_id = -1;
   int attempt = 0;
+  int output_level = 0;
   void FromJsonObj(const json&);
   void FromJsonStr(const std::string&);
   json ToJsonObj() const;

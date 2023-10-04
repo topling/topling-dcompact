@@ -807,6 +807,7 @@ try
   }
   meta.job_id = params.job_id;
   meta.attempt = m_attempt;
+  meta.output_level = params.output_level;
 #ifdef TOPLING_DCOMPACT_USE_ETCD
   meta.etcd_root = f->etcd_root;
 #endif
