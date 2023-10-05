@@ -475,6 +475,9 @@ struct QueueItem {
 #if 1
 struct WaitQueue : std::list<QueueItem> {
   void update_priority() {
+    if (size() <= 1) {
+      return;
+    }
     auto iter = std::max_element(begin(), end(), QueueItem::CmpScore());
     if (iter != begin()) { // move max score item to front
       this->splice(begin(), *this, iter);
