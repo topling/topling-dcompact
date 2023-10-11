@@ -143,7 +143,6 @@ __attribute__((weak)) pid_t GetZipServerPID();
 __attribute__((weak)) json PostHttpRequest(const std::string& uri, const std::string& body, bool strict);
 __attribute__((weak)) json JS_TopZipTable_Global_Stat(bool html);
 __attribute__((weak)) json JS_TopZipTable_Global_Env();
-extern const char* StrDateTimeNow(); // in builtin_table_factory.cc
 
 // defined in dcompact_etcd.cc
 extern size_t curl_my_recv(void* ptr, size_t, size_t len, void* userdata);
