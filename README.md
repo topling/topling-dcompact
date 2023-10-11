@@ -117,6 +117,7 @@ ZIP\_SERVER\_OPTIONS | ToplingZipTable environment variable. when MULTI_PROCESS 
 FEE_URL | url for fee
 LABOUR_ID | fee.labourId, normally the host name of dcompact worker
 CLOUD_PROVIDER | fee.provider
+ENABLE_HTTP_STOP | enable http stop api, disable this feature can avoid http misoperation/attack to stop dcompact_worker, default is false
 
 Note: For the same hoster instance, the path of the db data on the hoster and the path of accessing the db data of the hoster on the worker are generally different. Because it is difficult to agree on the mount path between the two, the environment variable NFS_MOUNT_ROOT on the worker and the json variables `hoster_root` and `instance_name` on the hoster work together to complete the mapping relationship of this path.
 

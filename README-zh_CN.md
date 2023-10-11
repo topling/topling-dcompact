@@ -163,6 +163,7 @@ ZIP\_SERVER\_OPTIONS | ToplingZipTable 环境变量，当 MULTI\_PROCESS 为 tru
 FEE_URL | 发送计费信息的 url
 LABOUR_ID | 计费信息中的 labourId，一般是 dcompact_worker 所在的主机名（hostname）
 CLOUD_PROVIDER | 计费信息中的 provider
+ENABLE_HTTP_STOP | 是否启用 http stop 接口，禁用该功能可避免通过 http 误操作或被攻击停止 dcompact_worker 服务。默认 false。
 
 注意：对于同一个 hoster 实例，该 hoster 上的 db 数据的路径和 worker 上访问该 hoster 的 db 数据的路径一般是不同的。因为两者的 mount path 很难达成一致，所以，worker 上的环境变量 NFS\_MOUNT\_ROOT 和 hoster 上的 json 变量 `hoster_root` 及 `instance_name` 共同协作，完成这个路径的映射关系。
 
