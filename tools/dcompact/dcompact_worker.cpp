@@ -1499,23 +1499,26 @@ class DcompactHttpHandler : public BasePostHttpHandler {
 class ShutdownCompactHandler : public BasePostHttpHandler {
  public:
   void doIt(const DcompactMeta& meta, struct mg_connection* conn) override {
-    Logger* info_log = nullptr;
     intrusive_ptr p = g_acceptedJobs.find(meta);
     if (p) {
-      info_log = p->m_log.get();
-      p->ShutDown();
+      // ShutDown needs sleep, run in thread
+      std::thread([p=std::move(p),meta]() {
+        Logger* info_log = p->m_log.get();
+        p->ShutDown();
+        info_log->Flush();
+        INFO("shutdown success: %s", meta.ToJsonStr());
+      });
       mg_printf(conn,
         "HTTP/1.1 200 OK\r\nContent-Type: text/json\r\n\r\n"
         R"({"status": "ok", "addr": "%s"})", ADVERTISE_ADDR.c_str()
       );
-      INFO("shutdown success: %s", meta.ToJsonStr());
-      info_log->Flush();
     }
     else {
       mg_printf(conn,
         "HTTP/1.1 200 OK\r\nContent-Type: text/json\r\n\r\n"
         R"({"status": "NotFound", "addr": "%s"})", ADVERTISE_ADDR.c_str()
       );
+      Logger* info_log = nullptr;
       WARN("shutdown NotFound: %s", meta.ToJsonStr());
     }
   }
