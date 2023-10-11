@@ -1833,7 +1833,9 @@ static int main(int argc, char* argv[]) {
   civet.addHandler("/probe", handle_probe);
   civet.addHandler("/list", handle_list);
   civet.addHandler("/stat", handle_stat);
-  civet.addHandler("/stop", handle_stop); // stop process
+  if (getEnvBool("ENABLE_HTTP_STOP", false)) {
+    civet.addHandler("/stop", handle_stop); // stop process
+  }
   civet.addHandler("/health", handle_health);
   INFO("CivetServer setup ok, start work threads");
   valvec<std::thread> work_threads(MAX_PARALLEL_COMPACTIONS, valvec_reserve());
