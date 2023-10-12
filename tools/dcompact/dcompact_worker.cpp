@@ -1507,7 +1507,7 @@ class ShutdownCompactHandler : public BasePostHttpHandler {
         p->ShutDown();
         info_log->Flush();
         INFO("shutdown success: %s", meta.ToJsonStr());
-      });
+      }).detach();
       mg_printf(conn,
         "HTTP/1.1 200 OK\r\nContent-Type: text/json\r\n\r\n"
         R"({"status": "ok", "addr": "%s"})", ADVERTISE_ADDR.c_str()
