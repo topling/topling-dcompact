@@ -1740,8 +1740,14 @@ class StopHttpHandler : public CivetHandler {
 class HealthHttpHandler : public CivetHandler {
  public:
   bool handleGet(CivetServer*, struct mg_connection* conn) override {
-    mg_write(conn, "HTTP/1.1 200 OK\r\nContent-Type: text/json\r\n\r\n"
-                   "{\"status\": \"OK\"}");
+    if (g_stop) {
+      mg_write(conn, "HTTP/1.1 412 Precondition Failed\r\n"
+                     "Content-Type: text/json\r\n\r\n"
+                     "{\"status\": \"Compact Worker is stopping\"}");
+    } else {
+      mg_write(conn, "HTTP/1.1 200 OK\r\nContent-Type: text/json\r\n\r\n"
+                     "{\"status\": \"OK\"}");
+    }
     return true;
   }
 #if CIVETWEB_VERSION_MAJOR * 100000 + CIVETWEB_VERSION_MINOR * 100 >= 1*100000 + 15*100
