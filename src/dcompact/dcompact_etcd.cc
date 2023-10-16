@@ -430,7 +430,7 @@ struct DcompactFeeConfig {
 
 json DcompactFeeReport::ToJson() const {
   json djs;
-  ROCKSDB_JSON_SET_PROP(djs, provider);
+//ROCKSDB_JSON_SET_PROP(djs, provider); // temporary remove provider
   ROCKSDB_JSON_SET_PROP(djs, instanceId);
   ROCKSDB_JSON_SET_PROP(djs, labourId);
   ROCKSDB_JSON_SET_PROP(djs, dbId);
@@ -1351,11 +1351,15 @@ void DcompactEtcdExec::ReportFee(const CompactionParams& params,
   uint64_t now_usec = m_env->NowMicros();
   uint64_t work_start_time = now_usec - results.work_time_usec;
   time_t rawtime = work_start_time / 1000000; // seconds
+#if 1
+  fee.starts = rawtime;
+#else
   struct tm  tm_storage;
   struct tm* tp = gmtime_r(&rawtime, &tm_storage);
   size_t cap = 64;
   fee.starts.resize(cap);
   fee.starts.resize(strftime(&fee.starts[0], cap, "%FT%H:%M:%SZ", tp));
+#endif
 
   const std::string& dbpath = params.dbname;
   std::string dbname = basename(dbpath.c_str()); // now for simpliciy

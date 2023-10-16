@@ -85,8 +85,8 @@ struct DcompactFeeReport {
   std::string labourId;   // dcompact worker/labour id
   std::string dbId;
   std::string dbStarts;
-  std::string starts; // compact 起始时间
-  size_t executesMs;  // compact 执行时长
+  uint64_t starts;   // compact start time, from epoch in second
+  size_t executesMs; // compact execution time duration, in milliseconds
   int compactionJobId;
   int attempt;
 

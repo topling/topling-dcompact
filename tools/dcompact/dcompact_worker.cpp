@@ -1395,6 +1395,7 @@ auto writeObjResult = [&]{
       fee.attempt = m_meta.attempt;
       fee.dbStarts = m_meta.start_time;
       for (char& c: fee.dbStarts) if ('.' == c) c = ':';
+      fee.starts = start_run_time / 1000000;
       fee.executesMs = results->work_time_usec / 1000;
       fee.instanceId = m_meta.instance_name;
       fee.labourId = LABOUR_ID;
