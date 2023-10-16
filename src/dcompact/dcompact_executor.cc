@@ -43,7 +43,10 @@ void DataIO_saveObject(DataIO& dio, const Slice& x) {
 }
 template<class DataIO>
 void DataIO_loadObject(DataIO& dio, InternalKey& x) {
-  dio >> *x.rep();
+  size_t len = dio.read_var_uint32();
+  auto* rep = x.rep();
+  rep->resize(len);
+  dio.ensureRead(rep->data(), len);
 }
 template<class DataIO>
 void DataIO_saveObject(DataIO& dio, const InternalKey& x) {
