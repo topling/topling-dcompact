@@ -1393,8 +1393,7 @@ auto writeObjResult = [&]{
       fee.provider = CLOUD_PROVIDER;
       fee.dbId = params.db_id;
       fee.attempt = m_meta.attempt;
-      fee.dbStarts = m_meta.start_time;
-      for (char& c: fee.dbStarts) if ('.' == c) c = ':';
+      fee.dbStarts = m_meta.start_time_epoch;
       fee.starts = start_run_time / 1000000;
       fee.executesMs = results->work_time_usec / 1000;
       fee.instanceId = m_meta.instance_name;

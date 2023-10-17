@@ -477,6 +477,7 @@ class DcompactEtcdExecFactory final : public CompactExecFactoryCommon {
   std::string web_domain; // now just for iframe auto height
   std::string m_start_time;
   std::string m_start_time_iso; // for ReportFee
+  uint64_t    m_start_time_epoch; // for ReportFee
   size_t estimate_speed = 10e6; // speed in bytes-per-second
   size_t max_book_dbcf = 20;
   float timeout_multiplier = 10.0;
@@ -531,6 +532,7 @@ class DcompactEtcdExecFactory final : public CompactExecFactoryCommon {
       m_start_time_iso.resize(cap);
       m_start_time_iso.resize(strftime(&m_start_time_iso[0], cap, "%FT%H:%M:%SZ", tp));
       m_start_time_iso.shrink_to_fit();
+      m_start_time_epoch = rawtime;
     }
     CompactExecFactoryCommon::init(js, repo);
     ROCKSDB_JSON_OPT_PROP(js, alert_email);
@@ -819,6 +821,7 @@ try
   meta.nfs_mnt_src = f->nfs_mnt_src;
   meta.nfs_mnt_opt = f->nfs_mnt_opt;
   meta.start_time = f->m_start_time;
+  meta.start_time_epoch = f->m_start_time_epoch;
   std::string output_dir = CatFmt(meta.output_root, "/job-%05d", meta.job_id);
   auto t0 = m_env->NowMicros();
   if (0 == m_attempt) {
@@ -1366,7 +1369,7 @@ void DcompactEtcdExec::ReportFee(const CompactionParams& params,
   fee.provider = conf->provider;
   fee.dbId = dbname;
   fee.attempt = m_attempt;
-  fee.dbStarts = f->m_start_time_iso;
+  fee.dbStarts = f->m_start_time_epoch;
   fee.executesMs = results.work_time_usec / 1000;
   fee.instanceId = f->fee_conf->instanceId;
   fee.compactionJobId = params.job_id;
