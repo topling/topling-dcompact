@@ -476,7 +476,6 @@ class DcompactEtcdExecFactory final : public CompactExecFactoryCommon {
   uint32_t    alert_interval = 60; // seconds
   std::string web_domain; // now just for iframe auto height
   std::string m_start_time;
-  std::string m_start_time_iso; // for ReportFee
   uint64_t    m_start_time_epoch; // for ReportFee
   size_t estimate_speed = 10e6; // speed in bytes-per-second
   size_t max_book_dbcf = 20;
@@ -529,9 +528,6 @@ class DcompactEtcdExecFactory final : public CompactExecFactoryCommon {
       m_start_time.resize(cap);
       m_start_time.resize(strftime(&m_start_time[0], cap, "%FT%H.%M.%S", tp));
       m_start_time.shrink_to_fit();
-      m_start_time_iso.resize(cap);
-      m_start_time_iso.resize(strftime(&m_start_time_iso[0], cap, "%FT%H:%M:%SZ", tp));
-      m_start_time_iso.shrink_to_fit();
       m_start_time_epoch = rawtime;
     }
     CompactExecFactoryCommon::init(js, repo);
