@@ -154,7 +154,9 @@ std::pair<std::string, long> HttpGet(const std::string& urlstr) {
   const char* url = urlstr.c_str();
   curl_easy_setopt(curl, CURLOPT_MAXCONNECTS, 32L);
   curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, errbuf);
+#if LIBCURL_VERSION_MAJOR * 10000 + LIBCURL_VERSION_MINOR * 10 >= 70490
   curl_easy_setopt(curl, CURLOPT_TCP_FASTOPEN, 1L);
+#endif
   curl_easy_setopt(curl, CURLOPT_TCP_NODELAY, 1L);
 //curl_easy_setopt(curl, CURLOPT_TIMEOUT, 5L);
   curl_easy_setopt(curl, CURLOPT_NOSIGNAL, true); // disable signal
@@ -196,7 +198,9 @@ HttpPost(const std::string& urlstr, const std::string& body, Logger* info_log) {
   const char* url = urlstr.c_str();
   curl_easy_setopt(curl, CURLOPT_MAXCONNECTS, 32L);
   curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, errbuf);
+#if LIBCURL_VERSION_MAJOR * 10000 + LIBCURL_VERSION_MINOR * 10 >= 70490
   curl_easy_setopt(curl, CURLOPT_TCP_FASTOPEN, 1L);
+#endif
   curl_easy_setopt(curl, CURLOPT_TCP_NODELAY, 1L);
 //curl_easy_setopt(curl, CURLOPT_TIMEOUT, 5L);
   curl_easy_setopt(curl, CURLOPT_NOSIGNAL, true); // disable signal

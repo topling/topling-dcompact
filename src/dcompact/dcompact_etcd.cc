@@ -31,6 +31,10 @@
 #endif // TOPLING_DCOMPACT_USE_ETCD
 
 #include <curl/curl.h>
+#if LIBCURL_VERSION_MAJOR * 10000 + LIBCURL_VERSION_MINOR * 10 >= 70440
+#else
+  #define CURLSSLOPT_NO_REVOKE 0
+#endif
 
 #include <filesystem>
 #include <random>
@@ -1118,7 +1122,9 @@ void DcompactEtcdExec::PostHttp(const std::string& urlstr, fstring body) {
   const char* url = urlstr.c_str();
   curl_easy_setopt(curl, CURLOPT_MAXCONNECTS, 32L);
   curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, errbuf);
+#if LIBCURL_VERSION_MAJOR * 10000 + LIBCURL_VERSION_MINOR * 10 >= 70490
   curl_easy_setopt(curl, CURLOPT_TCP_FASTOPEN, 1L);
+#endif
   curl_easy_setopt(curl, CURLOPT_TCP_NODELAY, 1L);
   curl_easy_setopt(curl, CURLOPT_TIMEOUT, 2L);
   curl_easy_setopt(curl, CURLOPT_NOSIGNAL, true); // disable signal
@@ -1180,7 +1186,9 @@ Status DcompactEtcdExec::SubmitHttp(const fstring action,
   }
   const char* url = m_url.c_str();
   curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, errbuf);
+#if LIBCURL_VERSION_MAJOR * 10000 + LIBCURL_VERSION_MINOR * 10 >= 70490
   curl_easy_setopt(curl, CURLOPT_TCP_FASTOPEN, 1L);
+#endif
   curl_easy_setopt(curl, CURLOPT_TCP_NODELAY, 1L);
   curl_easy_setopt(curl, CURLOPT_TIMEOUT, (long)f->http_timeout);
   curl_easy_setopt(curl, CURLOPT_NOSIGNAL, true); // disable signal
@@ -1381,7 +1389,9 @@ void DcompactEtcdExec::ReportFee(const CompactionParams& params,
   std::string result_buf;
   const char* url = conf->url.c_str();
   curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, errbuf);
+#if LIBCURL_VERSION_MAJOR * 10000 + LIBCURL_VERSION_MINOR * 10 >= 70490
   curl_easy_setopt(curl, CURLOPT_TCP_FASTOPEN, 1L);
+#endif
   curl_easy_setopt(curl, CURLOPT_TCP_NODELAY, 1L);
   curl_easy_setopt(curl, CURLOPT_TIMEOUT, (long)f->http_timeout);
   curl_easy_setopt(curl, CURLOPT_NOSIGNAL, true); // disable signal
