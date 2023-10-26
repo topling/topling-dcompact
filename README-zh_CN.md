@@ -94,7 +94,7 @@ etcd   | etcd 的连接选项，默认无认证，需要认证的话，有两种
 url | string | 无 | 提交 compact job
 base_url | string | 无 | probe 查询 compact job 或 shutdown 指定 compact job
 web_url | string | 无 | 在浏览器中通过 stat 查看状态，以及查看 log 文件。如果未定义，使用 base_url
-weight  | string | 无 | http_workers 包含多个服务器时，配置每个服务器的权重，派发 compact 时按权重等比例选择，权重仅在 http_workers 包含多个服务器时有用，表示不同服务器之间的相对值。例如权重 100 比权重 50 多一倍的入选机会，从而承担的计算量也多一倍
+weight  | int | 无 | http_workers 包含多个服务器时，配置每个服务器的权重，派发 compact 时按权重等比例选择，权重仅在 http_workers 包含多个服务器时有用，表示不同服务器之间的相对值。例如权重 100 比权重 50 多一倍的入选机会，从而承担的计算量也多一倍
 
 #### 最佳实践
 应该只定义 url = `http://some.host`，不定义 base_url，此时：
@@ -117,7 +117,7 @@ weight  | string | 无 | http_workers 包含多个服务器时，配置每个服
    * 生效的 base_url 从生效的 url 推导为 `http://some.host`
 
 ### 1.4. 注意事项
-CFOptions 的 `level_compaction_dynamic_level_bytes` 务必显示指定为 `false`，为 `true` 时，很可能会跳过 L1，直接 compact 到 L**n**，产生很大的单个 compact 并且无法利用 `max_level1_subcompactions` 配置的并发，导致长时间的卡顿。
+CFOptions 的 `level_compaction_dynamic_level_bytes` 务必显示指定为 `false`，为 `true` 时，很可能会跳过 L1，直接 compact 到 L**n**，产生很大的单个 compact ，导致长时间的卡顿。
 
 ## 2. dcompact worker
 
