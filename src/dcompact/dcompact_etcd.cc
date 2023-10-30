@@ -886,7 +886,7 @@ try
     ROCKS_LOG_ERROR(m_log, "job-%05d/att-%02d: init time "
      "wrt = %6.3f, mka = %6.3f, mkw = %6.3f, curl %s = %6.3f sec, err: %s, input = %s",
       meta.job_id, m_attempt, d1, d2, d3, m_url.c_str(), d4, s.ToString().c_str(),
-      SizeToString(m_input_raw_key_bytes + m_input_raw_val_bytes).c_str());
+      SizeToString(input_raw_bytes()).c_str());
     CleanFiles(params, *results);
     return s;
   }
@@ -936,7 +936,7 @@ try
   ROCKS_LOG_INFO(m_log, "job-%05d/att-%02d: init time "
     "wrt = %6.3f, mka = %6.3f, mkw = %6.3f, curl %s = %6.3f sec, input = %s",
     meta.job_id, m_attempt, d1, d2, d3, m_url.c_str(), d4,
-    SizeToString(m_input_raw_key_bytes + m_input_raw_val_bytes).c_str());
+    SizeToString(input_raw_bytes()).c_str());
   size_t timeout_us = std::max({
           size_t(f->timeout_multiplier * estimate_time_us),
           size_t(f->http_timeout)*1000*1000,
@@ -1038,7 +1038,7 @@ try
                       (t5-t4) / 1e6, // etcd
                       results->work_time_usec / 1e6,
                       (t6-t3) / 1e6, (t7-t6) / 1e6,
-                      SizeToString(m_input_raw_key_bytes + m_input_raw_val_bytes).c_str());
+                      SizeToString(input_raw_bytes()).c_str());
       m_done = true;
       s = Status::OK();
       auto all_usec = results->all_time_usec();
@@ -1073,7 +1073,7 @@ try
           "real = %.6f sec(submit = %.6f wait = %.6f), input = %s, send shutdown",
           params.job_id, m_attempt, m_url.c_str(), timeout_us/1e6,
           (tt-t2)/1e6, (t4-t3)/1e6, (t5-t4)/1e6,
-          SizeToString(m_input_raw_key_bytes + m_input_raw_val_bytes).c_str()));
+          SizeToString(input_raw_bytes()).c_str()));
     ROCKS_LOG_ERROR(m_log, "%s", s.ToString().c_str());
     SubmitHttp("/shutdown", meta_jstr, nth_http);
   }
@@ -1377,7 +1377,7 @@ void DcompactEtcdExec::ReportFee(const CompactionParams& params,
   fee.executesMs = results.work_time_usec / 1000;
   fee.instanceId = f->fee_conf->instanceId;
   fee.compactionJobId = params.job_id;
-  fee.compactionInputRawBytes = m_input_raw_key_bytes + m_input_raw_val_bytes;
+  fee.compactionInputRawBytes = input_raw_bytes();
   fee.compactionInputZipBytes = SumInputZipBytes(params.inputs);
   fee.compactionOutputRawBytes = results.output_index_size + results.output_data_size;
   fee.compactionOutputZipBytes = SumOutputZipBytes(results);
