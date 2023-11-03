@@ -1,6 +1,9 @@
 //
 // Created by leipeng on 2021/1/21.
 //
+#if defined(__clang__)
+  #pragma clang diagnostic ignored "-Wdeprecated-builtins"
+#endif
 #include <topling/side_plugin_factory.h>
 #include <topling/side_plugin_internal.h>
 #include <topling/web/CivetServer.h>
@@ -352,34 +355,34 @@ public:
   void OnSubcompactionBegin(const SubcompactionJobInfo&) override {
     UpdateLastActivityTime();
   }
-  void OnSubcompactionCompleted(const SubcompactionJobInfo&) {
+  void OnSubcompactionCompleted(const SubcompactionJobInfo&) override {
     UpdateLastActivityTime();
   }
-  void OnTableFileCreated(const TableFileCreationInfo&) {
+  void OnTableFileCreated(const TableFileCreationInfo&) override {
     UpdateSysTimeObj(g_lastFileOpenCloseTime, std::chrono::system_clock::now());
   }
-  void OnTableFileCreationStarted(const TableFileCreationBriefInfo&) {
+  void OnTableFileCreationStarted(const TableFileCreationBriefInfo&) override {
     UpdateSysTimeObj(g_lastFileOpenCloseTime, std::chrono::system_clock::now());
   }
-  void OnFileReadFinish(const FileOperationInfo& info) {
+  void OnFileReadFinish(const FileOperationInfo& info) override {
     UpdateWithFileOp(g_lastFileReadWriteTime, info);
   }
-  void OnFileWriteFinish(const FileOperationInfo& info) {
+  void OnFileWriteFinish(const FileOperationInfo& info) override {
     UpdateWithFileOp(g_lastFileReadWriteTime, info);
   }
-  void OnFileFlushFinish(const FileOperationInfo& info) {
+  void OnFileFlushFinish(const FileOperationInfo& info) override {
     UpdateWithFileOp(g_lastFileReadWriteTime, info);
   }
-  void OnFileSyncFinish(const FileOperationInfo& info) {
+  void OnFileSyncFinish(const FileOperationInfo& info) override {
     UpdateWithFileOp(g_lastFileReadWriteTime, info);
   }
-  void OnFileRangeSyncFinish(const FileOperationInfo& info) {
+  void OnFileRangeSyncFinish(const FileOperationInfo& info) override {
     UpdateWithFileOp(g_lastFileReadWriteTime, info);
   }
-  void OnFileTruncateFinish(const FileOperationInfo& info) {
+  void OnFileTruncateFinish(const FileOperationInfo& info) override {
     UpdateWithFileOp(g_lastFileOpenCloseTime, info);
   }
-  void OnFileCloseFinish(const FileOperationInfo& info) {
+  void OnFileCloseFinish(const FileOperationInfo& info) override {
     UpdateWithFileOp(g_lastFileOpenCloseTime, info);
   }
 };
