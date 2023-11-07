@@ -47,18 +47,19 @@ Distributed Compaction is configured in the json configuration file:
 
 Here, `CompactionExecutorFactory` is a C++ interface, which is a namespace in json. In this namespace, an object whose varname is `dcompact` and class name is `DcompactEtcd` (implements the `CompactionExecutorFactory` interface) is defined, and the object is constructed with `params`. The params are explained as follows:
 
-property name | default value | description
--------|------|---
-`allow_fallback_to_local`| false | Whether to allow fallback to local compact if Distributed Compaction fails
-`hoster_root` | null | The root directory of the db, generally set the same as the `path` variable in DB::Open.
-`instance_name` | null | The db instance name, in a multi-tenant scenario, the CompactWorker node uses instance\_name to distinguish different db instances
-`nfs_mnt_src`   | null | NFS mount source
-`nfs_mnt_opt`   | null | NFS mount options
-`http_max_retry` | 3 | Maximum number of retries
-`overall_timeout` | 5 | In seconds, the time-out time for a single execution attempt of a single Distributed Compaction task from start to finish
-`http_timeout` | 3 | In seconds, the timeout time of the http connection. Under normal circumstances, timeout means an error
-`http_workers` | null | Multiple (at least one) http urls. Those starting with `//` will be skipped, equivalent to being commented out<br/>`//end_http_workers` at the end is for the `start_workers.sh` script and cannot be deleted
-`dcompact_min_level` | 2 | Distributed Compaction is used only when the Compact Output Level is greater than or equal to this value, and local compact is used when it is smaller than this value
+property name | type | default value | description
+-------|:----:|------|---
+`allow_fallback_to_local`| bool | false | Whether to allow fallback to local compact if Distributed Compaction fails
+`hoster_root` | string | null | The root directory of the db, generally set the same as the `path` variable in DB::Open.
+`instance_name` | string | null | The db instance name, in a multi-tenant scenario, the CompactWorker node uses instance\_name to distinguish different db instances
+`nfs_type` | string | null | NFS type, empty means nfs, it can also be glusterfs, smbfs, etc.
+`nfs_mnt_src`   | string | null | NFS mount source
+`nfs_mnt_opt`   | string | null | NFS mount options
+`http_max_retry` | int | 3 | Maximum number of retries
+`overall_timeout` | int | 5 | In seconds, the time-out time for a single execution attempt of a single Distributed Compaction task from start to finish
+`http_timeout` | int | 3 | In seconds, the timeout time of the http connection. Under normal circumstances, timeout means an error
+`http_workers` | string or object | null | Multiple (at least one) http urls. Those starting with `//` will be skipped, equivalent to being commented out<br/>`//end_http_workers` at the end is for the `start_workers.sh` script and cannot be deleted
+`dcompact_min_level` | int | 2 | Distributed Compaction is used only when the Compact Output Level is greater than or equal to this value, and local compact is used when it is smaller than this value
 
 ### 1.1 http_workers
 
