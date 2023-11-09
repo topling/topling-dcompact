@@ -479,6 +479,7 @@ class DcompactEtcdExecFactory final : public CompactExecFactoryCommon {
   std::string alert_http;
   uint32_t    alert_interval = 60; // seconds
   std::string web_domain; // now just for iframe auto height
+  std::string job_url_root;
   std::string m_start_time;
   uint64_t    m_start_time_epoch; // for ReportFee
   size_t estimate_speed = 10e6; // speed in bytes-per-second
@@ -538,6 +539,7 @@ class DcompactEtcdExecFactory final : public CompactExecFactoryCommon {
     ROCKSDB_JSON_OPT_PROP(js, alert_email);
     ROCKSDB_JSON_OPT_PROP(js, alert_http);
     ROCKSDB_JSON_OPT_PROP(js, web_domain);
+    ROCKSDB_JSON_OPT_PROP(js, job_url_root);
     ROCKSDB_JSON_OPT_PROP(js, etcd_root);
     Update(js);
     if (!js.contains("http_workers")) {
@@ -638,6 +640,7 @@ class DcompactEtcdExecFactory final : public CompactExecFactoryCommon {
     ROCKSDB_JSON_SET_PROP(djs, alert_http);
     ROCKSDB_JSON_SET_PROP(djs, alert_interval);
     ROCKSDB_JSON_SET_PROP(djs, web_domain);
+    ROCKSDB_JSON_SET_PROP(djs, job_url_root);
     djs[html ? R"(<a href='javascript:SetParam("cols","3")'>workers</a>)" : "workers"]
         = HttpParams::DumpVecToJson(http_workers, html);
     ROCKSDB_JSON_SET_ENUM(djs, load_balance);
@@ -656,6 +659,17 @@ class DcompactEtcdExecFactory final : public CompactExecFactoryCommon {
 #endif
   }
   std::string WorkersView(const json& dump_options, int cols) const;
+  std::string JobUrl(const std::string& dbname, int job_id, int attempt) const final {
+    std::string str;
+    if (!job_url_root.empty()) {
+      char buf[64];
+      auto len = snprintf(buf, sizeof(buf), "job-%05d/att-%02d", job_id, attempt);
+      str.reserve(job_url_root.size() + instance_name.size() + m_start_time.size() + dbname.size() + len + 20);
+      (string_appender<>&)(str)
+        |job_url_root|"/"|instance_name|"/"|m_start_time|"/"|dbname|"/"|fstring(buf, len)|"/summary.html";
+    }
+    return str;
+  }
   void Update(const json& js) final {
     CompactExecFactoryCommon::Update(js);
     ROCKSDB_JSON_OPT_PROP(js, timeout_multiplier);
@@ -788,6 +802,11 @@ try
 #ifdef TOPLING_DCOMPACT_USE_ETCD
   auto pEtcd = f->m_etcd;
 #endif
+  for (auto& level_inputs : *params.inputs) {
+    for (auto& file : level_inputs.files) {
+      file->job_attempt = m_attempt;
+    }
+  }
   char buf[64];
   results->status = Status::Incomplete("executing command: " + f->etcd_url);
   const std::string& dbpath = params.dbname;
