@@ -680,6 +680,7 @@ void ShowCompactionParams(const CompactionParams& p, Version* const v,
     time["time"]["end"] = "unfinished";
     time["time"]["duration"] = "unfinished";
   }
+  time["fee_units"] = sqrt(double(inputBytes[0]) * inputBytes[1]) / 1e6;
 
   json js;
   js["overview"]["job_id"] = p.job_id;

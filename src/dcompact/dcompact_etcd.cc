@@ -287,12 +287,16 @@ static void perform_delayed_rm(Logger* m_log) {
   }
 }
 
+static uint64_t fee_units(uint64_t raw, uint64_t zip) {
+  return uint64_t(sqrt(double(raw) * zip) / 1e6);
+}
 struct DcompactStatItem {
   size_t   num_cumu_exec = 0;
   size_t   num_live_exec = 0;
   double   m_sum_compact_time_us = 0; // speed in bytes-per-second
   uint64_t m_sum_input_raw_key_bytes = 0;
   uint64_t m_sum_input_raw_val_bytes = 0;
+  uint64_t m_sum_input_zip_kv_bytes = 0;
   uint64_t m_last_access = 0;
 
   void add(const DcompactStatItem& y) {
@@ -301,10 +305,14 @@ struct DcompactStatItem {
     m_sum_compact_time_us += y.m_sum_compact_time_us;
     m_sum_input_raw_key_bytes += y.m_sum_input_raw_key_bytes;
     m_sum_input_raw_val_bytes += y.m_sum_input_raw_val_bytes;
+    m_sum_input_zip_kv_bytes  += y.m_sum_input_zip_kv_bytes;
   }
 
   uint64_t sum_input_raw_bytes() const {
     return m_sum_input_raw_key_bytes + m_sum_input_raw_val_bytes;
+  }
+  uint64_t sum_input_zip_bytes() const {
+    return m_sum_input_zip_kv_bytes;
   }
 
   double rt_estimate_speed_mb(size_t estimate_speed) const {
@@ -331,6 +339,7 @@ struct DcompactStatItem {
         {"Name", std::move(name)},
         {"Finish", num_cumu_exec},
         {"Live", num_live_exec},
+        {"FeeUnits", fee_units(kv_bytes, m_sum_input_zip_kv_bytes)},
         {"LastAccess", last_ac},
         {"Time(sec)", ToStr("%.3f", time_usec/1e6)},
         {"Speed", ToStr("%.3f MB/sec", kv_bytes/time_usec)},
@@ -377,7 +386,7 @@ struct DcompactStatMap : hash_strmap<DcompactStatItem> {
     }
     if (html) {
       js[0]["<htmltab:col>"] = json::array({
-        "Name", "Finish", "Live", "LastAccess", "Time(sec)", "Speed",
+        "Name", "Finish", "Live", "FeeUnits", "LastAccess", "Time(sec)", "Speed",
         "KeyBytes", "ValBytes", "KVBytes", "Key/KV", "AVG:Bytes"
       });
     }
@@ -697,6 +706,7 @@ class DcompactEtcdExec : public CompactExecCommon {
   DcompactMeta meta;
   uint64_t m_input_raw_key_bytes = 0;
   uint64_t m_input_raw_val_bytes = 0;
+  uint64_t m_input_zip_kv_bytes = 0;
   uint64_t m_start_ts = 0;
   uint64_t input_raw_bytes() const {
     return m_input_raw_key_bytes + m_input_raw_val_bytes;
@@ -852,6 +862,11 @@ try
     auto kv_bytes = CalcInputRawBytes(params.inputs);
     m_input_raw_key_bytes = kv_bytes.first;
     m_input_raw_val_bytes = kv_bytes.second;
+    m_input_zip_kv_bytes = 0;
+    for (auto& level_inputs : *params.inputs) {
+      for (auto& file : level_inputs.files)
+        m_input_zip_kv_bytes += file->fd.file_size;
+    }
     auto s1 = m_env->CreateDir(output_dir);
     TERARK_VERIFY_S(s1.ok(), "%s", s1.ToString());
     std::string params_fname = output_dir + "/rpc.params";
@@ -1065,11 +1080,13 @@ try
       f->m_stat_map.m_mtx.lock();
       f->m_stat_sum.m_sum_input_raw_key_bytes += m_input_raw_key_bytes;
       f->m_stat_sum.m_sum_input_raw_val_bytes += m_input_raw_val_bytes;
+      f->m_stat_sum.m_sum_input_zip_kv_bytes += m_input_zip_kv_bytes;
     //f->m_stat_sum.m_sum_compact_time_us += t6 - t3;
       f->m_stat_sum.m_sum_compact_time_us += t6 - t5 + all_usec;
       f->m_stat_map.val(m_stat_idx).num_cumu_exec++;
       f->m_stat_map.val(m_stat_idx).m_sum_input_raw_key_bytes += m_input_raw_key_bytes;
       f->m_stat_map.val(m_stat_idx).m_sum_input_raw_val_bytes += m_input_raw_val_bytes;
+      f->m_stat_map.val(m_stat_idx).m_sum_input_zip_kv_bytes += m_input_zip_kv_bytes;
     //f->m_stat_map.val(m_stat_idx).m_sum_compact_time_us += t6 - t3;
       f->m_stat_map.val(m_stat_idx).m_sum_compact_time_us += t6 - t5 + all_usec;
       f->m_stat_map.val(m_stat_idx).m_last_access = t7;
@@ -1611,7 +1628,10 @@ const {
   str|" , LiveExec = "|num_live_exec;
   str^" , Speed = %.3f"^speed_mbps^" MB/sec, Total: ";
   str|"Key = "|SizeToString(m_stat_sum.m_sum_input_raw_key_bytes)|", ";
-  str|"Val = "|SizeToString(m_stat_sum.m_sum_input_raw_val_bytes);
+  str|"Val = "|SizeToString(m_stat_sum.m_sum_input_raw_val_bytes)|", ";
+  str|"ZipKV = "|SizeToString(m_stat_sum.m_sum_input_zip_kv_bytes)|", ";
+  str|"Units = "|fee_units(m_stat_sum.sum_input_raw_bytes(),
+                           m_stat_sum.sum_input_zip_bytes());
   bool allworkers = JsonSmartBool(dump_options, "allworkers", true);
   str|"&nbsp;&nbsp;&nbsp;";
   str^R"(<a href='javascript:SetParam("allworkers","%d")'>)"^!allworkers;
