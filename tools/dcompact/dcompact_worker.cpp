@@ -2024,6 +2024,7 @@ static void RunOneJob(const DcompactMeta& meta, mg_connection* conn) noexcept {
   if (running + waiting >= limit) {
     g_jobsWaiting.fetch_sub(n_subcompacts, std::memory_order_relaxed);
     g_jobsRejected.fetch_add(1, std::memory_order_relaxed);
+    HttpErr(503, "%s : server busy, running jobs = %ld, waiting = %zd", attempt_dir, running, waiting);
     time_t now = ::time(nullptr);
     using namespace std::chrono;
     auto now_ns = system_clock::now();
@@ -2042,7 +2043,6 @@ static void RunOneJob(const DcompactMeta& meta, mg_connection* conn) noexcept {
       // stuck in ::exit, now force exit by ::_exit
       ::_exit(1); // force exit
     }
-    HttpErr(503, "%s : server busy, running jobs = %ld, waiting = %zd", attempt_dir, running, waiting);
     return;
   }
   g_jobsAccepting.fetch_add(1, std::memory_order_relaxed);
