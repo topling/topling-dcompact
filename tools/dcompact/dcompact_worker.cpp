@@ -321,6 +321,8 @@ static const bool NFS_DYNAMIC_MOUNT = getEnvBool("NFS_DYNAMIC_MOUNT", false);
 static const long MAX_PARALLEL_COMPACTIONS = getEnvLong("MAX_PARALLEL_COMPACTIONS", 0);
 static const long MAX_WAITING_COMPACTIONS = getEnvLong("MAX_WAITING_COMPACTIONS",
                                      std::thread::hardware_concurrency()*2);
+static const long THREAD_POOL_SIZE = std::max(getEnvLong("THREAD_POOL_SIZE", 0),
+                                              MAX_PARALLEL_COMPACTIONS);
 static const string TERMINATION_CHECK_URL = getEnvStr("TERMINATION_CHECK_URL", "");
 static const string WORKER_DB_ROOT = GetDirFromEnv("WORKER_DB_ROOT", "/tmp"); // NOLINT
 static const string NFS_MOUNT_ROOT = GetDirFromEnv("NFS_MOUNT_ROOT", "/mnt/nfs");
@@ -1696,6 +1698,7 @@ class StatHttpHandler : public CivetHandler {
         ROCKSDB_JSON_SET_PROP(vars, NFS_DYNAMIC_MOUNT);
       }
       vars["MAX_PARALLEL"] = MAX_PARALLEL_COMPACTIONS;
+      vars["THREAD_POOL"] = THREAD_POOL_SIZE;
       if (verbose >= 3) {
         vars["Compactions"]["accepting"] = g_jobsAccepting.load(std::memory_order_relaxed);
       }
@@ -1852,7 +1855,7 @@ static int main(int argc, char* argv[]) {
   }
   civet.addHandler("/health", handle_health);
   INFO("CivetServer setup ok, start work threads");
-  valvec<std::thread> work_threads(MAX_PARALLEL_COMPACTIONS, valvec_reserve());
+  valvec<std::thread> work_threads(THREAD_POOL_SIZE, valvec_reserve());
   for (size_t i = 0; i < work_threads.capacity(); ++i) {
     work_threads.unchecked_emplace_back(&work_thread_func);
   }
