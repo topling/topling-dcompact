@@ -1555,15 +1555,6 @@ class ProbeCompactHandler : public BasePostHttpHandler {
   }
 };
 
-static const char* StrDateTime(long long now_miros) {
-  static thread_local char buf[64];
-  time_t rawtime = now_miros / 1000000;
-  struct tm* timeinfo = localtime(&rawtime);
-  auto len = strftime(buf, sizeof(buf), "%F %T",timeinfo);
-  sprintf(buf + len, ".%03lld", now_miros % 1000000 / 1000);
-  return buf;
-}
-
 class ListHttpHandler : public CivetHandler {
  public:
   bool handleGet(CivetServer* server, struct mg_connection* conn) override {
@@ -1610,13 +1601,13 @@ td {
         oss|"<td>"|SizeToString(job->inputBytes[0])|"</td>";
         oss|"<td>"|SizeToString(job->inputBytes[1])|"</td>";
         if (0 == accept_time) { // not accepted
-          oss|"<td style='color:DarkCyan'>"|StrDateTime(init_time)|"</td>";
+          oss|"<td style='color:DarkCyan'>"|StrDateTimeEpochUS(init_time)|"</td>";
         }
         else if (start_run_time - accept_time > 100000) { // 100ms
-          oss|"<td>"|StrDateTime(accept_time);
-          oss|"<br>"|StrDateTime(start_run_time)|"</td>";
+          oss|"<td>"|StrDateTimeEpochUS(accept_time);
+          oss|"<br>"|StrDateTimeEpochUS(start_run_time)|"</td>";
         } else { // time diff too small, just show start_run_time
-          oss|"<td>"|StrDateTime(start_run_time)|"</td>";
+          oss|"<td>"|StrDateTimeEpochUS(start_run_time)|"</td>";
         }
         oss^"<td align='right'>%6.2f"
            ^((start_run_time?:now_micros) - (accept_time?:init_time))/1e6
