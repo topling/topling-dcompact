@@ -1366,12 +1366,12 @@ auto writeObjResult = [&]{
     // if cur attempt is last attempt, DeleteDir will success
     env->DeleteDir(job_dbname[3]); // dir job_id
     auto t4 = pf.now();
-    INFO("%s: olev = %d, time work = %.6f, result = %.6f, install = %.6f, deldir = %.6f, input{raw = %s zip = %s}",
+    INFO("finish %s: olev = %d, time work = %.6f, result = %.6f, install = %.6f, deldir = %.6f, input{raw = %s zip = %s}",
         attempt_dbname, params.output_level, pf.sf(t0,t1), pf.sf(t1,t2), pf.sf(t2,t3), pf.sf(t3,t4),
         SizeToString(inputBytes[0]), SizeToString(inputBytes[1]));
   }
   else {
-    INFO("%s: olev = %d, time work = %.6f, result = %.6f, install = %.6f, input{raw = %s zip = %s}",
+    INFO("finish %s: olev = %d, time work = %.6f, result = %.6f, install = %.6f, input{raw = %s zip = %s}",
         attempt_dbname, params.output_level, pf.sf(t0,t1), pf.sf(t1,t2), pf.sf(t2,t3),
         SizeToString(inputBytes[0]), SizeToString(inputBytes[1]));
   }
@@ -2090,7 +2090,7 @@ static void RunOneJob(const DcompactMeta& meta, mg_connection* conn) noexcept {
                  NFS_DYNAMIC_MOUNT && ESTALE == err ? "stale" : "skip", pf.mf(t5,t6));
     return;
   }
-  INFO("accept %s : n_subcompacts %d, prepare %.3f ms, fopen(rpc.params) %.3f ms, fopen(rpc.results) %.3f ms",
+  INFO("accept %s: n_subcompacts %d, prepare %.3f ms, fopen(rpc.params) %.3f ms, fopen(rpc.results) %.3f ms",
        attempt_dir, n_subcompacts, pf.mf(t0, t1), pf.mf(t2, t3), pf.mf(t3, t4));
   g_acceptedJobs.add(j.get());
   g_jobsAccepting.fetch_sub(1, std::memory_order_relaxed);
