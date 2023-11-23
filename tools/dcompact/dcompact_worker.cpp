@@ -51,32 +51,32 @@ using boost::intrusive_ptr;
 #endif // TOPLING_DCOMPACT_USE_ETCD
 
 static const long LOG_LEVEL = terark::getEnvLong("LOG_LEVEL", 2);
-#define PrintLog(level, fmt, ...) \
+#define PrintLog(level, strLevel, fmt, ...) \
   do { \
     if (LOG_LEVEL >= level) \
-      fprintf(stderr, "%s: %s:%d: " fmt "\n", StrDateTimeNow(), \
+      fprintf(stderr, "%s " strLevel " %s:%d: " fmt "\n", StrDateTimeNow(), \
               RocksLogShorterFileName(__FILE__), \
-              TERARK_PP_SmartForPrintf(__LINE__, ## __VA_ARGS__)); \
+              TERARK_PP_SmartForPrintf(__LINE__, ##__VA_ARGS__)); \
     if (info_log) \
-      Log(info_log->GetInfoLogLevel(), info_log, "%s:%d: " fmt, \
+      Log(info_log->GetInfoLogLevel(), info_log, strLevel " %s:%d: " fmt, \
           RocksLogShorterFileName(__FILE__), \
           TERARK_PP_SmartForPrintf(__LINE__, ##__VA_ARGS__)); \
   } while (0)
-#define TRAC(...) PrintLog(4, "TRAC: " __VA_ARGS__)
-#define DEBG(...) PrintLog(3, "DEBG: " __VA_ARGS__)
-#define INFO(...) PrintLog(2, "INFO: " __VA_ARGS__)
-#define WARN(...) PrintLog(1, "WARN: " __VA_ARGS__)
-#define ERROR(...) PrintLog(0, "ERROR: " __VA_ARGS__)
+#define TRAC(...) PrintLog(4, "TRAC", __VA_ARGS__)
+#define DEBG(...) PrintLog(3, "DEBG", __VA_ARGS__)
+#define INFO(...) PrintLog(2, "INFO", __VA_ARGS__)
+#define WARN(...) PrintLog(1, "WARN", __VA_ARGS__)
+#define ERROR(...) PrintLog(0, "ERROR", __VA_ARGS__)
 
 #define HttpErr(code, fmt, ...) do { \
   const char* strNow = StrDateTimeNow(); \
 mg_printf(conn, "HTTP/1.1 %d\r\nContent-type: text\r\n\r\n%s: " fmt, code, \
           TERARK_PP_SmartForPrintf(strNow, ##__VA_ARGS__)); \
-  fprintf(stderr, "%s: %s:%d: ERROR: " fmt "\n", strNow, \
+  fprintf(stderr, "%s ERROR %s:%d: " fmt "\n", strNow, \
           RocksLogShorterFileName(__FILE__), \
           TERARK_PP_SmartForPrintf(__LINE__, ##__VA_ARGS__)); \
   if (info_log) \
-    Error(info_log, "%s" fmt, TERARK_PP_SmartForPrintf("", ##__VA_ARGS__)); \
+    ROCKS_LOG_ERROR(info_log, "%s" fmt, TERARK_PP_SmartForPrintf("", ##__VA_ARGS__)); \
 } while (0)
 
 #define AddFmt(str, ...) do { \
