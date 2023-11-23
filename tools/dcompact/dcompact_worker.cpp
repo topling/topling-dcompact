@@ -72,8 +72,9 @@ static const long LOG_LEVEL = terark::getEnvLong("LOG_LEVEL", 2);
   const char* strNow = StrDateTimeNow(); \
 mg_printf(conn, "HTTP/1.1 %d\r\nContent-type: text\r\n\r\n%s: " fmt, code, \
           TERARK_PP_SmartForPrintf(strNow, ##__VA_ARGS__)); \
-  fprintf(stderr, "ERROR: %s: " fmt "\n", \
-          TERARK_PP_SmartForPrintf(strNow, ##__VA_ARGS__)); \
+  fprintf(stderr, "%s: %s:%d: ERROR: " fmt "\n", strNow, \
+          RocksLogShorterFileName(__FILE__), \
+          TERARK_PP_SmartForPrintf(__LINE__, ##__VA_ARGS__)); \
   if (info_log) \
     Error(info_log, "%s" fmt, TERARK_PP_SmartForPrintf("", ##__VA_ARGS__)); \
 } while (0)
@@ -1980,11 +1981,13 @@ void NotifyEtcd() const {}
 json m_http_headers;
 
 static void RunOneJob(const DcompactMeta& meta, mg_connection* conn) noexcept {
+  auto t0 = pf.now();
   if (!Slice(meta.output_root).starts_with(meta.hoster_root)) {
     Logger* info_log = nullptr;
     HttpErr(412,
       "Bad Request: hoster_root = (%s) is not a prefix of output_root = (%s)",
       meta.hoster_root, meta.output_root);
+    return;
   }
   if (g_stop) {
     Logger* info_log = nullptr;
@@ -2053,6 +2056,7 @@ static void RunOneJob(const DcompactMeta& meta, mg_connection* conn) noexcept {
   string inFname = MakePath(output_dir, "rpc.params");
   string outFname = MakePath(attempt_dir, "rpc.results");
   FILE* in = fopen(inFname.c_str(), "rb");
+  auto t3 = pf.now();
   if (!in) {
     g_jobsWaiting.fetch_sub(n_subcompacts, std::memory_order_relaxed);
     g_jobsPreFailed.fetch_add(1, std::memory_order_relaxed);
@@ -2062,24 +2066,30 @@ static void RunOneJob(const DcompactMeta& meta, mg_connection* conn) noexcept {
       // will call umount2
       mount_nfs(meta, conn, info_log); // treat fail even success
     }
-    HttpErr(412, "fopen(%s, rb) = %s", inFname, strerror(err));
+    HttpErr(412, "fopen(%s, rb) = %s, %.3f ms, prepare %.3f ms, mount %.3f ms",
+            inFname, strerror(err), pf.mf(t2, t3), pf.mf(t0, t1), pf.mf(t1, t2));
     return;
   }
-  auto t3 = pf.now();
   FILE* out = fopen(outFname.c_str(), "wb");
+  auto t4 = pf.now();
   if (!out) {
     g_jobsWaiting.fetch_sub(n_subcompacts, std::memory_order_relaxed);
     g_jobsPreFailed.fetch_add(1, std::memory_order_relaxed);
     g_jobsAccepting.fetch_sub(1, std::memory_order_relaxed);
     int err = errno;
     fclose(in);
+    auto t5 = pf.now();
     if (NFS_DYNAMIC_MOUNT && ESTALE == err) {
       mount_nfs(meta, conn, info_log); // treat fail even success
     }
-    HttpErr(412, "fopen(%s, wb) = %s", outFname, strerror(err));
+    auto t6 = pf.now();
+    HttpErr(412, "fopen(%s, wb) = %s\n\t"
+                 "fopen(%s, rb) = %.3f ms, fclose %.3f ms, prepare %.3f ms, mount %.3f ms, mount(%s) %.3f ms",
+                 outFname, strerror(err),
+                 inFname, pf.mf(t3,t4), pf.mf(t4,t5), pf.mf(t0,t1), pf.mf(t1,t2),
+                 NFS_DYNAMIC_MOUNT && ESTALE == err ? "stale" : "skip", pf.mf(t5,t6));
     return;
   }
-  auto t4 = pf.now();
   INFO("accept %s : n_subcompacts = %d, fopen(rpc.params) = %.6f sec, fopen(rpc.results) = %.6f sec",
        attempt_dir, n_subcompacts, pf.sf(t2, t3), pf.sf(t3, t4));
   g_acceptedJobs.add(j.get());
