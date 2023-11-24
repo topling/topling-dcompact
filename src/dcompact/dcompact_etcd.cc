@@ -39,6 +39,8 @@
 #include <filesystem>
 #include <random>
 
+#include <file/file_util.h>
+
 #if 0
 #define Err(fmt, ...) fprintf(stderr, "%s:%d: " fmt "\n", \
                               RocksLogShorterFileName(__FILE__), \
@@ -493,6 +495,7 @@ class DcompactEtcdExecFactory final : public CompactExecFactoryCommon {
   uint64_t    m_start_time_epoch; // for ReportFee
   size_t estimate_speed = 10e6; // speed in bytes-per-second
   size_t max_book_dbcf = 20;
+  bool copy_sst_files = false;
   float timeout_multiplier = 10.0;
   int http_max_retry = 3;
   int http_timeout = 3; // in seconds
@@ -545,6 +548,7 @@ class DcompactEtcdExecFactory final : public CompactExecFactoryCommon {
       m_start_time_epoch = rawtime;
     }
     CompactExecFactoryCommon::init(js, repo);
+    ROCKSDB_JSON_OPT_PROP(js, copy_sst_files);
     ROCKSDB_JSON_OPT_PROP(js, alert_email);
     ROCKSDB_JSON_OPT_PROP(js, alert_http);
     ROCKSDB_JSON_OPT_PROP(js, web_domain);
@@ -639,6 +643,7 @@ class DcompactEtcdExecFactory final : public CompactExecFactoryCommon {
     djs["estimate_speed"] = ToStr("%.3f MB/sec", estimate_speed/1e6);
     ROCKSDB_JSON_SET_PROP(djs, timeout_multiplier);
     djs["stat"] = m_stat_map.ToJson(html);
+    ROCKSDB_JSON_SET_PROP(djs, copy_sst_files);
     ROCKSDB_JSON_SET_PROP(djs, etcd_root);
     ROCKSDB_JSON_SET_PROP(djs, overall_timeout);
     ROCKSDB_JSON_SET_PROP(djs, http_timeout);
@@ -702,6 +707,7 @@ class DcompactEtcdExec : public CompactExecCommon {
   const HttpParams* m_worker = nullptr;
   std::string m_labour_id;
   std::string m_full_server_id;
+  std::vector<std::string> m_copyed_files;
   string_appender<> m_url;
   DcompactMeta meta;
   uint64_t m_input_raw_key_bytes = 0;
@@ -716,6 +722,7 @@ class DcompactEtcdExec : public CompactExecCommon {
  public:
   explicit DcompactEtcdExec(const DcompactEtcdExecFactory* fac);
   Status SubmitHttp(const fstring action, const std::string& meta_jstr, size_t nth_http) noexcept;
+  Status MaybeCopyFiles(const CompactionParams& params);
   Status Execute(const CompactionParams&, CompactionResults*) override;
   Status Attempt(const CompactionParams&, CompactionResults*);
   void CleanFiles(const CompactionParams&, const CompactionResults&) override;
@@ -762,11 +769,61 @@ void DcompactEtcdExec::AlertDcompactFail(const Status& s) {
   }
 }
 
+Status DcompactEtcdExec::MaybeCopyFiles(const CompactionParams& params) {
+  auto f = static_cast<const DcompactEtcdExecFactory*>(m_factory);
+  if (!f->copy_sst_files)
+    return Status::OK();
+  for (auto& cf_path : params.cf_paths)
+    TERARK_VERIFY_S(!Slice(cf_path.path).starts_with(f->hoster_root),
+                    "%s : %s", cf_path.path, f->hoster_root);
+  const std::string& dbpath = params.dbname;
+  std::string dbname = basename(dbpath.c_str());
+  std::string dir = f->hoster_root + "/" + dbname;
+  auto t0 = m_env->NowMicros();
+  m_env->CreateDirIfMissing(dir);
+  dir += "/";
+  dir += params.cf_name;
+  auto s = m_env->CreateDirIfMissing(dir);
+  if (!s.ok())
+    return s;
+  auto& cf_paths = const_cast<CompactionParams&>(params).cf_paths;
+  size_t sum_size = 0;
+  for (auto& lev : *params.inputs) {
+    for (FileMetaData* file : lev.files) {
+      FileDescriptor& fd = file->fd;
+      sum_size += fd.file_size;
+      auto src = TableFileName(cf_paths, fd.GetNumber(), fd.GetPathId());
+      auto dst = MakeTableFileName(dir, fd.GetNumber());
+      auto ios = CopyFile(m_env->GetFileSystem(), src, dst, fd.file_size,
+                          true, nullptr, Temperature::kUnknown);
+      m_copyed_files.push_back(std::move(dst)); // maybe partially copyed
+      if (!ios.ok())
+        return Status(ios);
+      file->fd.packed_number_and_path_id = PackFileNumberAndPathId(fd.GetNumber(), 0);
+    }
+  }
+  cf_paths = {{dir, UINT_MAX}};
+  auto t1 = m_env->NowMicros();
+  INFO("MaybeCopyFiles(%s[%s]/job-%05d) time %.3f sec, size %12s, speed %7.3f MB/s",
+       dbname, params.cf_name, params.job_id, (t1-t0)/1e6,
+       SizeToString(sum_size), double(sum_size)/(t1-t0));
+  return s;
+}
+
 Status DcompactEtcdExec::Execute(const CompactionParams& params,
                                        CompactionResults* results)
 {
   auto f = static_cast<const DcompactEtcdExecFactory*>(m_factory);
-  Status s;
+  Status s = MaybeCopyFiles(params);
+  if (!s.ok()) {
+    if (!m_factory->allow_fallback_to_local) {
+      TERARK_DIE_S("MaybeCopyFiles(%s[%s]/job-%05d) failed = %s",
+        params.dbname, params.cf_name, params.job_id, s.ToString());
+    }
+    WARN("MaybeCopyFiles(%s[%s]/job-%05d) failed = %s",
+        params.dbname, params.cf_name, params.job_id, s.ToString());
+    return s;
+  }
   for (; m_attempt < f->http_max_retry; m_attempt++) {
     auto shutting_down = m_params->shutting_down;
     if (shutting_down && shutting_down->load(std::memory_order_relaxed)) {
@@ -1493,7 +1550,8 @@ void DcompactEtcdExec::ReportFee(const CompactionParams& params,
 
 void DcompactEtcdExec::CleanFiles(const CompactionParams& params,
                                   const CompactionResults& results) {
-  if (static_cast<const DcompactEtcdExecFactory*>(m_factory)->fee_conf) {
+  auto f = static_cast<const DcompactEtcdExecFactory*>(m_factory);
+  if (f->fee_conf) {
     // output_index_size and output_data_size will be set in
     // compaction_job.cc: RunRemote(), code change in this way will
     // minimize the efforts and maximize compatibility
@@ -1526,6 +1584,10 @@ void DcompactEtcdExec::CleanFiles(const CompactionParams& params,
       if (!s.ok())
         WARN("%s", s.ToString()), fail_num++;
     };
+    for (const std::string& file : m_copyed_files) {
+      ROCKSDB_VERIFY(f->copy_sst_files);
+      rm(file);
+    }
     rm(attempt_dir + "/compact.done");
     rm(attempt_dir + "/rpc.results");
     rmdir(attempt_dir);
