@@ -776,7 +776,8 @@ void DcompactEtcdExec::AlertDcompactFail(const Status& s) {
   }
 }
 
-#ifdef __linux__
+#if defined(__linux__) && 0
+// srcFile and dstFile must be a same mounted filesystem
 Status FastCopyFile(const char* srcFile, const char* dstFile) {
   int srcFd = open(srcFile, O_RDONLY, 0);
   if (srcFd < 0) {
@@ -839,12 +840,8 @@ Status DcompactEtcdExec::MaybeCopyFiles(const CompactionParams& params) {
       sum_size += fd.file_size;
       auto src = TableFileName(cf_paths, fd.GetNumber(), fd.GetPathId());
       auto dst = MakeTableFileName(dir, fd.GetNumber());
-#ifdef __linux__
-      auto ios = FastCopyFile(src.c_str(), dst.c_str());
-#else
       auto ios = CopyFile(m_env->GetFileSystem(), src, dst, fd.file_size,
                           true, nullptr, Temperature::kUnknown);
-#endif
       m_copyed_files.push_back(std::move(dst)); // maybe partially copyed
       if (!ios.ok())
         return Status(ios);
