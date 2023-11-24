@@ -8,6 +8,7 @@
 #include <terark/io/FileStream.hpp>
 #include <terark/num_to_str.hpp>
 #include <terark/util/atomic.hpp>
+#include <terark/util/autofree.hpp>
 #include <terark/util/function.hpp>
 #include <terark/util/linebuf.hpp>
 #include <terark/util/process.hpp>
@@ -40,6 +41,12 @@
 #include <random>
 
 #include <file/file_util.h>
+
+#if defined(__linux__)
+       #include <sys/types.h>
+       #include <sys/stat.h>
+       #include <fcntl.h>
+#endif
 
 #if 0
 #define Err(fmt, ...) fprintf(stderr, "%s:%d: " fmt "\n", \
@@ -769,6 +776,44 @@ void DcompactEtcdExec::AlertDcompactFail(const Status& s) {
   }
 }
 
+#ifdef __linux__
+Status FastCopyFile(const char* srcFile, const char* dstFile) {
+  int srcFd = open(srcFile, O_RDONLY, 0);
+  if (srcFd < 0) {
+    return Status::IOError(Slice("open ") + srcFile, strerror(errno));
+  }
+  int dstFd = open(dstFile, O_RDWR|O_CREAT, 0644);
+  if (dstFd < 0) {
+    close(srcFd);
+    return Status::IOError(Slice("open ") + dstFile, strerror(errno));
+  }
+  struct stat st;
+  if (fstat(srcFd, &st) < 0) {
+    close(dstFd);
+    close(srcFd);
+    return Status::IOError(Slice("stat ") + srcFile, strerror(errno));
+  }
+  fallocate(dstFd, 0, 0, st.st_size); // ignore return error
+  off_t srcOff = 0, dstOff = 0;
+  while (srcOff < st.st_size) {
+    auto req = st.st_size - srcOff;
+    auto len = copy_file_range(srcFd, &srcOff, dstFd, &dstOff, req, 0);
+    if (len < 0) {
+      std::string err = strerror(errno);
+      close(dstFd);
+      close(srcFd);
+      terark::AutoFree<char> msg1;
+      asprintf(&msg1.p, "copy_file_range(%s, %s, off=%zd, %zd)",
+               srcFile, dstFile, srcOff, req);
+      return Status::IOError(msg1.p, err);
+    }
+  }
+  close(dstFd);
+  close(srcFd);
+  return Status::OK();
+}
+#endif
+
 Status DcompactEtcdExec::MaybeCopyFiles(const CompactionParams& params) {
   auto f = static_cast<const DcompactEtcdExecFactory*>(m_factory);
   if (!f->copy_sst_files)
@@ -794,8 +839,12 @@ Status DcompactEtcdExec::MaybeCopyFiles(const CompactionParams& params) {
       sum_size += fd.file_size;
       auto src = TableFileName(cf_paths, fd.GetNumber(), fd.GetPathId());
       auto dst = MakeTableFileName(dir, fd.GetNumber());
+#ifdef __linux__
+      auto ios = FastCopyFile(src.c_str(), dst.c_str());
+#else
       auto ios = CopyFile(m_env->GetFileSystem(), src, dst, fd.file_size,
                           true, nullptr, Temperature::kUnknown);
+#endif
       m_copyed_files.push_back(std::move(dst)); // maybe partially copyed
       if (!ios.ok())
         return Status(ios);
