@@ -1056,6 +1056,15 @@ int RunCompact(FILE* in, FILE* out) const {
   imm_dbo.db_paths.clear();
   imm_dbo.db_paths.reserve(params.cf_paths.size() + 1);
   size_t  output_path_id = params.cf_paths.size();
+  if (1 == output_path_id) {
+    // there is only one input path, set all path_id = 0, because files have
+    // been copyed from multiple input paths to one path at db side when
+    // copy_sst_files = true, but did not update packed_number_and_path_id,
+    // so we must set PathId to 0
+    for (auto& level_inputs : *params.inputs)
+      for (FileMetaData* f : level_inputs.files)
+        f->fd.packed_number_and_path_id &= kFileNumberMask;
+  }
   for (auto& x : params.cf_paths) {
     imm_dbo.db_paths.emplace_back(GetWorkerNodePath(x.path), x.target_size);
   }

@@ -848,7 +848,10 @@ Status DcompactEtcdExec::MaybeCopyFiles(const CompactionParams& params) {
       m_copyed_files.push_back(std::move(dst)); // maybe partially copyed
       if (!ios.ok())
         return Status(ios);
-      file->fd.packed_number_and_path_id = PackFileNumberAndPathId(fd.GetNumber(), 0);
+      // do not change packed_number_and_path_id because it is not owned by
+      // CompactionParams, but owned by VersionStorage, it will be fixed by
+      // dcompact_worker.
+      //file->fd.packed_number_and_path_id = PackFileNumberAndPathId(fd.GetNumber(), 0);
     }
   }
   cf_paths = {{dir, UINT_MAX}};
