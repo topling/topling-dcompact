@@ -795,8 +795,7 @@ Status DcompactEtcdExec::MaybeCopyFiles(const CompactionParams& params) {
   m_env->CreateDirIfMissing(dir);
   dir += "/";
   dir += params.cf_name;
-  auto s = m_env->CreateDirIfMissing(dir);
-  if (!s.ok())
+  if (auto s = m_env->CreateDirIfMissing(dir); !s.ok())
     return s;
   auto& cf_paths = const_cast<CompactionParams&>(params).cf_paths;
   size_t sum_size = 0;
@@ -821,7 +820,7 @@ Status DcompactEtcdExec::MaybeCopyFiles(const CompactionParams& params) {
   INFO("MaybeCopyFiles(%s[%s]/job-%05d) time %.3f sec, size %12s, speed %7.3f MB/s",
        dbname, params.cf_name, params.job_id, (t1-t0)/1e6,
        SizeToString(sum_size), double(sum_size)/(t1-t0));
-  return s;
+  return Status::OK();
 }
 
 Status DcompactEtcdExec::Execute(const CompactionParams& params,
