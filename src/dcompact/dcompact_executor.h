@@ -52,6 +52,8 @@ class CompactExecCommon : public CompactionExecutor {
   ~CompactExecCommon() override;
   void SetParams(CompactionParams*, const Compaction*) override;
   void NotifyResults(FILE*, const CompactionParams& params);
+  Status CopyOneFile(const std::string& src, const std::string& dst, off_t fsize) override;
+  Status RenameFile(const std::string& src, const std::string& dst, off_t fsize) override;
 };
 
 struct DcompactMeta {

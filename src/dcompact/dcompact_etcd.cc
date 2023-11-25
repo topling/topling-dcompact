@@ -8,7 +8,6 @@
 #include <terark/io/FileStream.hpp>
 #include <terark/num_to_str.hpp>
 #include <terark/util/atomic.hpp>
-#include <terark/util/autofree.hpp>
 #include <terark/util/function.hpp>
 #include <terark/util/linebuf.hpp>
 #include <terark/util/process.hpp>
@@ -39,15 +38,6 @@
 
 #include <filesystem>
 #include <random>
-
-#include <file/file_util.h>
-
-#if defined(__linux__)
-       #include <sys/types.h>
-       #include <sys/stat.h>
-       #include <fcntl.h>
-       #include <sys/sendfile.h>
-#endif
 
 #if 0
 #define Err(fmt, ...) fprintf(stderr, "%s:%d: " fmt "\n", \
@@ -730,7 +720,7 @@ class DcompactEtcdExec : public CompactExecCommon {
  public:
   explicit DcompactEtcdExec(const DcompactEtcdExecFactory* fac);
   Status SubmitHttp(const fstring action, const std::string& meta_jstr, size_t nth_http) noexcept;
-  Status CopyOneFile(const char* srcFile, const char* dstFile, off_t fsize);
+  Status RenameFile(const std::string& src, const std::string& dst, off_t fsize) override;
   Status MaybeCopyFiles(const CompactionParams& params);
   Status Execute(const CompactionParams&, CompactionResults*) override;
   Status Attempt(const CompactionParams&, CompactionResults*);
@@ -778,45 +768,17 @@ void DcompactEtcdExec::AlertDcompactFail(const Status& s) {
   }
 }
 
-Status DcompactEtcdExec::CopyOneFile(const char* srcFile, const char* dstFile,
-                                     off_t fsize) {
-#if defined(__linux__)
-// copy_file_range: srcFile and dstFile must be a same mounted filesystem
-// use sendfile
-  int srcFd = open(srcFile, O_RDONLY, 0);
-  if (srcFd < 0) {
-    return Status::IOError(Slice("open ") + srcFile, strerror(errno));
+Status DcompactEtcdExec::RenameFile(const std::string& src,
+                                    const std::string& dst,
+                                    off_t fsize) {
+  auto f = static_cast<const DcompactEtcdExecFactory*>(m_factory);
+  if (f->copy_sst_files) {
+    if (Status st = CopyOneFile(src, dst, fsize); st.ok())
+      return m_env->DeleteFile(src);
+    else
+      return st;
   }
-  int dstFd = open(dstFile, O_RDWR|O_CREAT, 0644);
-  if (dstFd < 0) {
-    close(srcFd);
-    return Status::IOError(Slice("open ") + dstFile, strerror(errno));
-  }
-  fallocate(dstFd, 0, 0, fsize); // ignore return error
-  off_t offset = 0;
-  while (offset < fsize) {
-    auto req = fsize - offset;
-    auto len = sendfile(dstFd, srcFd, nullptr, req);
-    if (len < 0 || (0 == len && EINTR != errno)) {
-      std::string err = strerror(errno);
-      close(dstFd);
-      close(srcFd);
-      terark::AutoFree<char> msg1;
-      asprintf(&msg1.p, "sendfile(dst %s, src %s, off %zd, %zd)",
-               dstFile, srcFile, offset, req);
-      return Status::IOError(msg1.p, err);
-    }
-    offset += len;
-  }
-  close(dstFd);
-  close(srcFd);
-  return Status::OK();
-#else
-  auto fs = m_env->GetFileSystem();
-  auto ios = CopyFile(fs, srcFile, dstFile, fsize,
-                      true, nullptr, Temperature::kUnknown);
-  return Status(ios);
-#endif
+  return CompactExecCommon::RenameFile(src, dst, fsize);
 }
 
 Status DcompactEtcdExec::MaybeCopyFiles(const CompactionParams& params) {
@@ -844,7 +806,7 @@ Status DcompactEtcdExec::MaybeCopyFiles(const CompactionParams& params) {
       sum_size += fd.file_size;
       auto src = TableFileName(cf_paths, fd.GetNumber(), fd.GetPathId());
       auto dst = MakeTableFileName(dir, fd.GetNumber());
-      auto ios = CopyOneFile(src.c_str(), dst.c_str(), fd.file_size);
+      auto ios = CopyOneFile(src, dst, fd.file_size);
       m_copyed_files.push_back(std::move(dst)); // maybe partially copyed
       if (!ios.ok())
         return Status(ios);

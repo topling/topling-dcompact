@@ -15,8 +15,18 @@
 #include <terark/io/MemStream.hpp>
 #include <terark/num_to_str.hpp>
 #include <terark/util/atomic.hpp>
+#include <terark/util/autofree.hpp>
 #include <terark/util/stat.hpp>
 #include <boost/core/demangle.hpp>
+
+#include <file/file_util.h>
+
+#if defined(__linux__)
+       #include <sys/types.h>
+       #include <sys/stat.h>
+       #include <fcntl.h>
+       #include <sys/sendfile.h>
+#endif
 
 extern const char* rocksdb_build_git_sha;
 const char* git_version_hash_info_topling_dcompact();
@@ -482,6 +492,61 @@ void CompactExecCommon::SetParams(CompactionParams* params, const Compaction* c)
   static_cast<CompactionParamsJS*>(params)->update_extensible_js_data();
 
   TRAC("CompactExecCommon::SetParams():\n%s", params->DebugString());
+}
+
+
+Status CompactExecCommon::CopyOneFile(const std::string& src,
+                                      const std::string& dst,
+                                      off_t fsize) {
+#if defined(__linux__)
+// copy_file_range: src and dst must be a same mounted filesystem
+// use sendfile
+  int srcFd = open(src.c_str(), O_RDONLY, 0);
+  if (srcFd < 0) {
+    return Status::IOError(Slice("open ") + src.c_str(), strerror(errno));
+  }
+  int dstFd = open(dst.c_str(), O_RDWR|O_CREAT, 0644);
+  if (dstFd < 0) {
+    close(srcFd);
+    return Status::IOError(Slice("open ") + dst.c_str(), strerror(errno));
+  }
+  fallocate(dstFd, 0, 0, fsize); // ignore return error
+  off_t offset = 0;
+  while (offset < fsize) {
+    auto req = fsize - offset;
+    auto len = sendfile(dstFd, srcFd, nullptr, req);
+    if (len < 0 || (0 == len && EINTR != errno)) {
+      std::string err = strerror(errno);
+      close(dstFd);
+      close(srcFd);
+      terark::AutoFree<char> msg1;
+      asprintf(&msg1.p, "sendfile(dst %s, src %s, off %zd, %zd)",
+               dst.c_str(), src.c_str(), offset, req);
+      return Status::IOError(msg1.p, err);
+    }
+    offset += len;
+  }
+  close(dstFd);
+  close(srcFd);
+  return Status::OK();
+#else
+  auto fs = m_env->GetFileSystem();
+  auto ios = CopyFile(fs, src.c_str(), dst.c_str(), fsize,
+                      true, nullptr, Temperature::kUnknown);
+  return Status(ios);
+#endif
+}
+
+Status CompactExecCommon::RenameFile(const std::string& src,
+                                     const std::string& dst,
+                                     off_t fsize) {
+  Status st = m_env->RenameFile(src, dst);
+  if (!st.ok() && st.subcode() == Status::kCrossDevice) {
+    st = CopyOneFile(src, dst, fsize);
+    if (st.ok())
+      st = m_env->DeleteFile(src);
+  }
+  return st;
 }
 
 std::pair<uint64_t, uint64_t> CompactExecCommon::CalcInputRawBytes(
