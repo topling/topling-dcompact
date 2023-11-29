@@ -55,6 +55,7 @@
 属性名  | 类型 | 默认值 | 解释说明
 -------|:----:|-------|--------
 allow_fallback_to_local| bool |false | 如果分布式 Compact 失败，是否允许回退到本地 Compact
+copy_sst_files     | bool   | false | 不可通过 http 在线修改，此时 hoster_root 不能为 db 数据目录的前缀
 hoster_root        | string | 空 | 该 db 的根目录，一般设置为与 DB::Open 中的 `path` 变量相同。
 instance_name      | string | 空 | 该 db 实例名，在多租户场景下，CompactWorker 结点使用 instance\_name 区分不同的 db 实例
 nfs_type           | string | 空 | NFS 类型，空表示 `nfs`, 也可以是 `glusterfs`, `smbfs` 等等
@@ -116,7 +117,15 @@ weight  | int | 无 | http_workers 包含多个服务器时，配置每个服务
    * 如果 url 形如 `http://some.host` 则生效的 url 为 `http://some.host/dcompact`
    * 生效的 base_url 从生效的 url 推导为 `http://some.host`
 
-### 1.4. 注意事项
+
+### 1.4. copy_sst_files 选项
+copy_sst_files 为 true 时，compact 中 input sst file 会被拷贝到 `${hoster_root}/dbname/cfname` 中，同时将 cf_paths 设为该目录。此时 hoster_root 不能为原 cf_paths 的前缀，实际上，copy_sst_files 选项并非必要，因为如果 hoster_root 是前缀，则无需拷贝文件，如果不是前缀，则必须拷贝文件，compact_worker 才能访问到文件，然后才能执行 compact，但这样的隐性规则过于微妙，所以通过 copy_sst_files 来显式地配置。
+
+这个功能是为了实现公有云跨账号数据交换，因为公有云跨账号的 vpc peering 有配额限制（AWS 是 125，阿里云是 20），其它跨账号通讯也都不合适，所以我们通过对象存储（AWS 的 S3，阿里云的 OSS）来实现数据交换。
+
+对象存储一般都可以通过 fuse mount 到文件系统，所以只需要将数据拷贝到对象存储的文件系统中即可。
+
+### 1.5. 注意事项
 CFOptions 的 `level_compaction_dynamic_level_bytes` 务必显示指定为 `false`，为 `true` 时，很可能会跳过 L1，直接 compact 到 L**n**，产生很大的单个 compact ，导致长时间的卡顿。
 
 ## 2. dcompact worker
