@@ -513,7 +513,7 @@ Status CompactExecCommon::CopyOneFile(const std::string& src,
   fallocate(dstFd, 0, 0, fsize); // ignore return error
   off_t offset = 0;
   while (offset < fsize) {
-    auto req = fsize - offset;
+    auto req = std::min(fsize - offset, off_t(1L<<30));
     auto len = sendfile(dstFd, srcFd, nullptr, req);
     if (len < 0 || (0 == len && EINTR != errno)) {
       std::string err = strerror(errno);
