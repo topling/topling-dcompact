@@ -805,10 +805,10 @@ Status DcompactEtcdExec::MaybeCopyFiles(const CompactionParams& params) {
       sum_size += fd.file_size;
       auto src = TableFileName(cf_paths, fd.GetNumber(), fd.GetPathId());
       auto dst = MakeTableFileName(dir, fd.GetNumber());
-      auto ios = CopyOneFile(src, dst, fd.file_size);
+      auto status = CopyOneFile(src, dst, fd.file_size);
       m_copyed_files.push_back(std::move(dst)); // maybe partially copyed
-      if (!ios.ok())
-        return Status(ios);
+      if (!status.ok())
+        return status;
       // do not change packed_number_and_path_id because it is not owned by
       // CompactionParams, but owned by VersionStorage, it will be fixed by
       // dcompact_worker.
