@@ -314,9 +314,11 @@ static std::atomic_long g_etcd_err{0};
 #endif
 
 // CHECK_CODE_REVISION - 0: do not check
-//                       1: check rocksdb release version
-//                       2: check git commit hash
-static const long CHECK_CODE_REVISION = getEnvLong("CHECK_CODE_REVISION", 1);
+//                       1: check rocksdb major, ignore minor and patch
+//                       2: check rocksdb major.minor, ignore patch
+//                       3: check rocksdb major.minor.patch
+//                       4: check git commit hash
+static const long CHECK_CODE_REVISION = getEnvLong("CHECK_CODE_REVISION", 2);
 
 static const bool NFS_DYNAMIC_MOUNT = getEnvBool("NFS_DYNAMIC_MOUNT", false);
 static const long MAX_PARALLEL_COMPACTIONS = getEnvLong("MAX_PARALLEL_COMPACTIONS", 0);
@@ -1491,14 +1493,24 @@ class BasePostHttpHandler : public CivetHandler {
     Logger* info_log = nullptr;
     DCOMPACT_WORKER_TRY()
       meta.FromJsonStr(data);
-      if (CHECK_CODE_REVISION >= 1 && meta.code_version != ROCKSDB_VERSION) {
+      if (CHECK_CODE_REVISION == 1 && meta.code_version / 10000 != ROCKSDB_MAJOR) {
+        // ROCKSDB_MAJOR mismatch
+        HttpErr(412, "ROCKSDB_VERSION Error: my = %d, req = %d", ROCKSDB_VERSION, meta.code_version);
+        return true;
+      }
+      if (CHECK_CODE_REVISION == 2 && meta.code_version / 10 != ROCKSDB_VERSION / 10) {
+        // ROCKSDB_MAJOR and ROCKSDB_MINOR mismatch
+        HttpErr(412, "ROCKSDB_VERSION Error: my = %d, req = %d", ROCKSDB_VERSION, meta.code_version);
+        return true;
+      }
+      if (CHECK_CODE_REVISION >= 3 && meta.code_version != ROCKSDB_VERSION) {
         HttpErr(412, "ROCKSDB_VERSION Error: my = %d, req = %d", ROCKSDB_VERSION, meta.code_version);
         return true;
       }
       auto githash = strchr(rocksdb_build_git_sha, ':');
       ROCKSDB_VERIFY(nullptr != githash);
       githash++; // skip the ':'
-      if (CHECK_CODE_REVISION >= 2 && meta.code_githash != githash) {
+      if (CHECK_CODE_REVISION >= 4 && meta.code_githash != githash) {
         HttpErr(412, "rocksdb_githash Error: my = %s, req = %s", githash, meta.code_githash);
         return true;
       }
