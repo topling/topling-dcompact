@@ -505,6 +505,7 @@ class DcompactEtcdExecFactory final : public CompactExecFactoryCommon {
   mutable std::mt19937_64 m_rand_gen;
   unsigned m_weight_sum = 0;
   LoadBalanceType load_balance = LoadBalanceType::kRoundRobin;
+  json dcompact_http_headers;
 
 #ifdef TOPLING_DCOMPACT_USE_ETCD
   etcd::Client* m_etcd = nullptr;
@@ -583,8 +584,7 @@ class DcompactEtcdExecFactory final : public CompactExecFactoryCommon {
       etcd_url = ecp.url;
     }
 #endif
-    auto iter = js.find("fee_conf");
-    if (js.end() != iter) {
+    if (auto iter = js.find("fee_conf"); js.end() != iter) {
       auto& js_fee = iter.value();
       if (!js_fee.is_object()) {
         THROW_InvalidArgument("json[\"fee_conf\"] must be an object");
@@ -593,6 +593,17 @@ class DcompactEtcdExecFactory final : public CompactExecFactoryCommon {
     }
     if (http_workers.empty()) {
       THROW_InvalidArgument("http_workers must not be empty");
+    }
+    if (auto iter = js.find("dcompact_http_headers"); js.end() != iter) {
+      dcompact_http_headers = iter.value();
+      if (!dcompact_http_headers.is_object()) {
+        THROW_InvalidArgument("dcompact_http_headers must be an json object");
+      }
+      auto it = dcompact_http_headers.begin();
+      for (; dcompact_http_headers.end() != it; ++it) {
+        if (!it.value().is_string())
+          THROW_InvalidArgument("dcompact_http_headers[" + it.key() + "] is not a string");
+      }
     }
     // m_round_robin_idx - start at a random idx
     auto seed = std::chrono::system_clock::now().time_since_epoch().count();
@@ -669,6 +680,7 @@ class DcompactEtcdExecFactory final : public CompactExecFactoryCommon {
       etcd_js["password"] = "****";
     }
 #endif
+    ROCKSDB_JSON_SET_PROP(djs, dcompact_http_headers);
   }
   std::string WorkersView(const json& dump_options, int cols) const;
   std::string JobUrl(const std::string& dbname, int job_id, int attempt) const final {
@@ -1283,13 +1295,26 @@ Status DcompactEtcdExec::SubmitHttp(const fstring action,
   const auto& params = *f->http_workers[nth_http];
   CURL* curl = curl_easy_init();
   std::string result_buf;
+  auto headers = curl_slist_append(nullptr, "Content-Type: application/json");
+  TERARK_SCOPE_EXIT(curl_slist_free_all(headers));
+  curl_slist_append(headers, "Expect:");
   if (action == "/dcompact") {
+    std::string kv;
+    auto iter = f->dcompact_http_headers.begin();
+    for (; iter != f->dcompact_http_headers.end(); ++iter) {
+      kv.clear();
+      kv.append(iter.key());
+      kv.append(": ");
+      kv.append(iter.value().get_ref<const std::string&>());
+      curl_slist_append(headers, kv.c_str());
+    }
     m_url.assign(params.url);
   } else {
     curl_easy_setopt(curl, CURLOPT_COOKIE, m_full_server_id.c_str());
     m_url.clear();
     m_url|params.base_url|action|"?labour="|m_labour_id;
   }
+  curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
   const char* url = m_url.c_str();
   curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, errbuf);
 #if LIBCURL_VERSION_MAJOR * 10000 + LIBCURL_VERSION_MINOR * 10 >= 70490
@@ -1316,10 +1341,6 @@ Status DcompactEtcdExec::SubmitHttp(const fstring action,
     //curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
     curl_easy_setopt(curl, CURLOPT_SSL_OPTIONS, CURLSSLOPT_ALLOW_BEAST | CURLSSLOPT_NO_REVOKE);
   }
-  auto headers = curl_slist_append(nullptr, "Content-Type: application/json");
-  curl_slist_append(headers, "Expect:");
-  curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
-  TERARK_SCOPE_EXIT(curl_slist_free_all(headers));
   auto err = curl_easy_perform(curl);
   Status s;
   if (err) {
