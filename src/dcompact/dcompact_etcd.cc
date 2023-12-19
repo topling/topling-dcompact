@@ -478,8 +478,10 @@ struct AlertMeta {
 class DcompactEtcdExecFactory final : public CompactExecFactoryCommon {
  public:
   Env* m_env = Env::Default();
+#ifdef TOPLING_DCOMPACT_USE_ETCD
   std::string etcd_url;
   std::string etcd_root;
+#endif
   std::vector<std::shared_ptr<HttpParams> > http_workers; // http or https
   std::string nfs_type = "nfs"; // default is nfs, can be glusterfs...
   std::string nfs_mnt_src;
@@ -552,7 +554,9 @@ class DcompactEtcdExecFactory final : public CompactExecFactoryCommon {
     ROCKSDB_JSON_OPT_PROP(js, alert_http);
     ROCKSDB_JSON_OPT_PROP(js, web_domain);
     ROCKSDB_JSON_OPT_PROP(js, job_url_root);
+#ifdef TOPLING_DCOMPACT_USE_ETCD
     ROCKSDB_JSON_OPT_PROP(js, etcd_root);
+#endif
     Update(js);
     if (!js.contains("http_workers")) {
       if (http_workers.empty()) // if from template, it is not empty
@@ -653,7 +657,9 @@ class DcompactEtcdExecFactory final : public CompactExecFactoryCommon {
     ROCKSDB_JSON_SET_PROP(djs, timeout_multiplier);
     djs["stat"] = m_stat_map.ToJson(html);
     ROCKSDB_JSON_SET_PROP(djs, copy_sst_files);
+#ifdef TOPLING_DCOMPACT_USE_ETCD
     ROCKSDB_JSON_SET_PROP(djs, etcd_root);
+#endif
     ROCKSDB_JSON_SET_PROP(djs, overall_timeout);
     ROCKSDB_JSON_SET_PROP(djs, http_timeout);
     ROCKSDB_JSON_SET_PROP(djs, http_max_retry);
@@ -893,6 +899,9 @@ try
   auto f = static_cast<const DcompactEtcdExecFactory*>(m_factory);
 #ifdef TOPLING_DCOMPACT_USE_ETCD
   auto pEtcd = f->m_etcd;
+  results->status = Status::Incomplete("executing command: " + f->etcd_url);
+#else
+  results->status = Status::Incomplete("DcompactEtcdExec::Attempt() starts");
 #endif
   for (auto& level_inputs : *params.inputs) {
     for (auto& file : level_inputs.files) {
@@ -900,7 +909,6 @@ try
     }
   }
   char buf[64];
-  results->status = Status::Incomplete("executing command: " + f->etcd_url);
   const std::string& dbpath = params.dbname;
   std::string dbname = basename(dbpath.c_str()); // now for simpliciy
   std::string dbcf_name = dbname + "/" + params.cf_name;
