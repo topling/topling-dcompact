@@ -496,6 +496,7 @@ class DcompactEtcdExecFactory final : public CompactExecFactoryCommon {
   size_t estimate_speed = 10e6; // speed in bytes-per-second
   size_t max_book_dbcf = 20;
   bool copy_sst_files = false;
+  bool web_show_secret = false;
   float timeout_multiplier = 10.0;
   int http_max_retry = 3;
   int http_timeout = 3; // in seconds
@@ -550,6 +551,7 @@ class DcompactEtcdExecFactory final : public CompactExecFactoryCommon {
     }
     CompactExecFactoryCommon::init(js, repo);
     ROCKSDB_JSON_OPT_PROP(js, copy_sst_files);
+    ROCKSDB_JSON_OPT_PROP(js, web_show_secret);
     ROCKSDB_JSON_OPT_PROP(js, alert_email);
     ROCKSDB_JSON_OPT_PROP(js, alert_http);
     ROCKSDB_JSON_OPT_PROP(js, web_domain);
@@ -686,7 +688,9 @@ class DcompactEtcdExecFactory final : public CompactExecFactoryCommon {
       etcd_js["password"] = "****";
     }
 #endif
-    ROCKSDB_JSON_SET_PROP(djs, dcompact_http_headers);
+    if (web_show_secret) {
+      ROCKSDB_JSON_SET_PROP(djs, dcompact_http_headers);
+    }
   }
   std::string WorkersView(const json& dump_options, int cols) const;
   std::string JobUrl(const std::string& dbname, int job_id, int attempt) const final {
