@@ -75,6 +75,8 @@ alert_email        | string | 空 | 重试次数到达 http_max_retry 但分布�
 alert_http         | string | 空 | 重试次数到达 http_max_retry 但分布式 Compact 仍然失败时，向此 http 发送 POST 报警
 alert_interval     | int    | 60 | 如果频繁失败，且每次都报警，报警信息会洪水泛滥，所以每隔这么长时间（单位：**秒**），才报警一次
 web_domain         | string | 空 | 在浏览器中，多个 compact_worker 的状态以 iframe 方式内嵌在页面中，web_domain 用来实现自动调整 iframe 高度（JavaScript 需要跨域权限）
+web_show_secret    | bool   | false | 在浏览器中，是否显示 dcompact_http_headers 等机密内容
+dcompact_http_headers| json | 空 | 发送 dcompact http 请求时需要填入的 header，用作认证等用途
 
 以上 int, bool, enum, size 类型的参数可以通过 http 在线修改。
 
