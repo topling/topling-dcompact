@@ -13,7 +13,7 @@
 
 用户自定义的插件，例如 MergeOperator, CompactionFilter 等需要编译成动态库，运行 dcompact\_worker.exe 时通过 LD\_PRELOAD 加载。使用这种方式，相同进程可以加载多个不同的动态库，从而为多个不同的 DB 提供 compact 服务，例如 [MyTopling(MySQL)](https://github.com/topling/mytopling) 和 [Todis(Redis)](https://github.com/topling/todis) 就使用这种方式共享相同的 dcompact\_worker 进程。
 
-> 分布式 Compact 的实现类名是 DcompactEtcd，这是因为 ToplingDB 分布式 Compact 最初是通过 etcd-cpp-api 使用 etcd 用作 Hoster 与 Worker 的交互，后来因为 etcd-cpp-api 的 [bug #78](https://github.com/etcd-cpp-apiv3/etcd-cpp-apiv3/issues/78) 而不得不弃用 etcd。目前 etcd 相关代码已经无用，仅有 DcompactEtcd 作为类名保留下来。
+> 分布式 Compact 的实现类名是 DcompactEtcd，这是因为 ToplingDB 分布式 Compact 最初是通过 [etcd-cpp-api](https://github.com/etcd-cpp-apiv3/etcd-cpp-apiv3) 使用 etcd 用作 Hoster 与 Worker 的交互，后来因为 etcd-cpp-api 的 [bug #78](https://github.com/etcd-cpp-apiv3/etcd-cpp-apiv3/issues/78) 而不得不弃用 etcd。目前 etcd 相关代码已经无用，仅有 DcompactEtcd 作为类名保留下来。
 
 
 ## 1. 配置
@@ -54,7 +54,7 @@
 
 属性名  | 类型 | 默认值 | 解释说明
 -------|:----:|-------|--------
-allow_fallback_to_local| bool |false | 如果分布式 Compact 失败，是否允许回退到本地 Compact
+allow_fallback_to_local| bool |false | 如果分布式 Compact 失败，是否允许回退到本地 Compact，如果不允许，则会调用 abort 主动 coredump
 copy_sst_files     | bool   | false | 不可通过 http 在线修改，此时 hoster_root 不能为 db 数据目录的前缀
 hoster_root        | string | 空 | 该 db 的根目录，一般设置为与 DB::Open 中的 `path` 变量相同。
 instance_name      | string | 空 | 该 db 实例名，在多租户场景下，CompactWorker 结点使用 instance\_name 区分不同的 db 实例
@@ -75,7 +75,7 @@ alert_email        | string | 空 | 重试次数到达 http_max_retry 但分布�
 alert_http         | string | 空 | 重试次数到达 http_max_retry 但分布式 Compact 仍然失败时，向此 http 发送 POST 报警
 alert_interval     | int    | 60 | 如果频繁失败，且每次都报警，报警信息会洪水泛滥，所以每隔这么长时间（单位：**秒**），才报警一次
 web_domain         | string | 空 | 在浏览器中，多个 compact_worker 的状态以 iframe 方式内嵌在页面中，web_domain 用来实现自动调整 iframe 高度（JavaScript 需要跨域权限）
-web_show_secret    | bool   | false | 在浏览器中，是否显示 dcompact_http_headers 等机密内容
+web_show_secret    | bool   | false | 在浏览器中，是否显示 dcompact_http_headers 等机密内容（不可在线修改）
 dcompact_http_headers| json | 空 | 发送 dcompact http 请求时需要填入的 header，用作认证等用途
 
 以上 int, bool, enum, size 类型的参数可以通过 http 在线修改。
@@ -90,14 +90,14 @@ etcd   | etcd 的连接选项，默认无认证，需要认证的话，有两种
 ### 1.3. http_workers
 在内网环境下，每个 worker 可以简单地配置为一个字符串，表示 worker 的 http url。
 
-在公网（例如云计算）环境下，worker 隐藏在反向代理/负载均衡后面，为此增加了几个配置字段：
+在公网（例如云计算）环境下，worker 隐藏在反向代理/负载均衡后面，为此增加了几个配置字段（均无默认值）：
 
-字段名| 类型 | 默认值 | 说明
-------|------|------|-----
-url | string | 无 | 提交 compact job
-base_url | string | 无 | probe 查询 compact job 或 shutdown 指定 compact job
-web_url | string | 无 | 在浏览器中通过 stat 查看状态，以及查看 log 文件。如果未定义，使用 base_url
-weight  | int | 无 | http_workers 包含多个服务器时，配置每个服务器的权重，派发 compact 时按权重等比例选择，权重仅在 http_workers 包含多个服务器时有用，表示不同服务器之间的相对值。例如权重 100 比权重 50 多一倍的入选机会，从而承担的计算量也多一倍
+字段名| 类型 | 说明
+------|------|-----
+url | string | 提交 compact job
+base_url| string | probe 查询 compact job 或 shutdown 指定 compact job
+web_url | string |  在浏览器中通过 stat 查看状态，以及查看 log 文件。如果未定义，使用 base_url
+weight  | int | http_workers 包含多个服务器时，配置每个服务器的权重，派发 compact 时按权重等比例选择，权重仅在 http_workers 包含多个服务器时有用，表示不同服务器之间的相对值。例如权重 100 比权重 50 多一倍的入选机会，从而承担的计算量也多一倍
 
 #### 最佳实践
 应该只定义 url = `http://some.host`，不定义 base_url，此时：
@@ -164,7 +164,7 @@ ulimit -n 100000
 TERMINATION\_CHECK\_URL|如果机器是竞价实例（Spot Instance），云厂商会提供 HTTP 接口来检查机器是否将要释放，正常状态下该 HTTP 会返回 404，在机器将要释放时，返回其它值（一般是 200）
 WORKER\_DB\_ROOT | worker 为每个 hoster 发过来的每个 compact job 的每个 attempt 都会创建一个目录，<br/>该目录中会保存 db 的 pseudo metadata 及运行日志，compact 成功之后该目录中的数据就没有用处了
 DEL\_WORKER\_TEMP\_DB| 参考 `WORKER_DB_ROOT`，当相应的 compact 执行完后，是否删除相应的目录，<br/>因为 compact 执行完之后，相应目录中的数据就没有用处了，可以删除，但是为了事后追踪，仍可保留
-NFS\_DYNAMIC\_MOUNT | 0 表示系统中已 mount nfs（如果使用 autofs，设为 0 即可）<br/>1 表示系统中未 mount nfs，由 dcompact\_worker 进程动态 mount http 请求中指定的 nfs
+NFS\_DYNAMIC\_MOUNT | 0 表示系统中已 mount nfs（如果使用 [autofs](https://access.redhat.com/documentation/en-us/red_hat_enterprise_linux/7/html/storage_administration_guide/nfs-autofs)，设为 0 即可）<br/>1 表示系统中未 mount nfs，由 dcompact\_worker 进程动态 mount http 请求中指定的 nfs
 NFS\_MOUNT\_ROOT | 此目录下包含多个 Hoster 的 sst 目录，目录名为每个 Hoster 的 `instance_name`。<br/>hoster 发给 worker 的目录都是在 json 中指定的，worker 会将 hoster 发过来的目录前缀中同于<br/> `DcompactEtcd` json 定义中的 `hoster_root` 的部分替换为 `${NFS_MOUNT_ROOT}/instance_name`
 MAX\_PARALLEL\_COMPACTIONS | 该 dcompact\_worker 进程可以同时执行多少个 compact 任务，必须大于 0，但不宜设得太大
 ADVERTISE\_ADDR | 该参数会通过 dcompact 请求的 response 返回给 Hoster, 从而在 Hoster 的 dcompact worker web view 中展示在链接 url 中，这是为了适配反向代理，使得我们可以在公网环境下查看内网的 dcompact\_worker 的 web view
