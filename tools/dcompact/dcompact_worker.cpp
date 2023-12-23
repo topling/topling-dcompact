@@ -1377,13 +1377,13 @@ auto writeObjResult = [&]{
     // if cur attempt is last attempt, DeleteDir will success
     env->DeleteDir(job_dbname[3]); // dir job_id
     auto t4 = pf.now();
-    INFO("finish %s: olev %d, time work %.6f, result %.6f, install %.6f, input{raw %s zip %s}, deldir %.6f",
-        attempt_dbname, params.output_level, pf.sf(t0,t1), pf.sf(t1,t2), pf.sf(t2,t3), pf.sf(t3,t4),
-        SizeToString(inputBytes[0]), SizeToString(inputBytes[1]));
+    INFO("finish %s: olev %d, time work %.3f s, result %.3f ms, install %.3f ms, input{raw %s zip %s}, deldir %.6f ms",
+        attempt_dbname, params.output_level, pf.sf(t0,t1), pf.mf(t1,t2), pf.mf(t2,t3),
+        SizeToString(inputBytes[0]), SizeToString(inputBytes[1]), pf.sf(t3,t4));
   }
   else {
-    INFO("finish %s: olev %d, time work %.6f, result %.6f, install %.6f, input{raw %s zip %s}",
-        attempt_dbname, params.output_level, pf.sf(t0,t1), pf.sf(t1,t2), pf.sf(t2,t3),
+    INFO("finish %s: olev %d, time work %.3f s, result %.3f ms, install %.3f ms, input{raw %s zip %s}",
+        attempt_dbname, params.output_level, pf.sf(t0,t1), pf.mf(t1,t2), pf.mf(t2,t3),
         SizeToString(inputBytes[0]), SizeToString(inputBytes[1]));
   }
   if (!shutting_down.load(std::memory_order_acquire)) {
