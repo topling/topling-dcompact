@@ -333,6 +333,8 @@ static const string LABOUR_ID = getEnvStr("LABOUR_ID", "");
 static const string CLOUD_PROVIDER = getEnvStr("CLOUD_PROVIDER", "");
 static const char* WEB_DOMAIN = getenv("WEB_DOMAIN");
 static const bool MULTI_PROCESS = getEnvBool("MULTI_PROCESS", false);
+static const bool TOPLINGDB_CACHE_SST_FILE_ITER
+    = getEnvBool("TOPLINGDB_CACHE_SST_FILE_ITER", false);
 
 static time_t g_lastActivityTime = 0;
 static time_t g_lastSuccessTime = 0;
@@ -980,7 +982,6 @@ int RunCompact(FILE* in, FILE* out) const {
   env_options.allow_fallocate = false;
   FileOptions file_options(env_options);
   shared_ptr<FileSystem> fs = env->GetFileSystem();
-  shared_ptr<Cache> table_cache = NewLRUCache(50000, 16);
   WriteController write_controller;
   WriteBufferManager write_buffer_manager(8<<20); // 8M
   ImmutableDBOptions imm_dbo;
@@ -1095,6 +1096,11 @@ int RunCompact(FILE* in, FILE* out) const {
     auto s = cfo.table_factory->ValidateOptions(dbo, cfo);
     TERARK_VERIFY_S(s.ok(), "TableFactory.ValidateOptions() = %s", s.ToString());
   }
+  if (TOPLINGDB_CACHE_SST_FILE_ITER) {
+    WARN("env TOPLINGDB_CACHE_SST_FILE_ITER is true, sst would not be closed asap!");
+  }
+  // minimize table cache capacity(=1), let sst file becing closed asap
+  shared_ptr<Cache> table_cache = NewLRUCache(1); // capacity is not strict
   BlockCacheTracer* block_cache_tracer = nullptr;
   const std::shared_ptr<IOTracer> io_tracer(nullptr);
   unique_ptr<VersionSet> versions(
