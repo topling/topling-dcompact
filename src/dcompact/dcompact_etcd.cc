@@ -3,6 +3,7 @@
 //
 #include "dcompact_executor.h"
 #include <logging/logging.h>
+#include <rocksdb/threadpool.h>
 #include <topling/side_plugin_factory.h>
 
 #include <terark/io/FileStream.hpp>
@@ -509,6 +510,7 @@ class DcompactEtcdExecFactory final : public CompactExecFactoryCommon {
   unsigned m_weight_sum = 0;
   LoadBalanceType load_balance = LoadBalanceType::kRoundRobin;
   json dcompact_http_headers;
+  std::shared_ptr<ThreadPool> m_copy_file_threadpool;
 
 #ifdef TOPLING_DCOMPACT_USE_ETCD
   etcd::Client* m_etcd = nullptr;
@@ -611,12 +613,16 @@ class DcompactEtcdExecFactory final : public CompactExecFactoryCommon {
           THROW_InvalidArgument("dcompact_http_headers[" + it.key() + "] is not a string");
       }
     }
+    int copy_file_threads = 10;
+    ROCKSDB_JSON_OPT_PROP(js, copy_file_threads);
+    m_copy_file_threadpool.reset(NewThreadPool(copy_file_threads));
     // m_round_robin_idx - start at a random idx
     auto seed = std::chrono::system_clock::now().time_since_epoch().count();
     m_rand_gen = std::mt19937_64(seed);
     m_round_robin_idx = m_rand_gen() % http_workers.size();
   }
   ~DcompactEtcdExecFactory() override {
+    m_copy_file_threadpool->JoinAllThreads();
 #ifdef TOPLING_DCOMPACT_USE_ETCD
     delete m_etcd;
 #endif
@@ -678,6 +684,7 @@ class DcompactEtcdExecFactory final : public CompactExecFactoryCommon {
     ROCKSDB_JSON_SET_PROP(djs, nfs_type);
     ROCKSDB_JSON_SET_PROP(djs, nfs_mnt_src);
     ROCKSDB_JSON_SET_PROP(djs, nfs_mnt_opt);
+    djs["copy_file_threads"] = m_copy_file_threadpool->GetBackgroundThreads();
     CompactExecFactoryCommon::ToJson(dump_options, djs, repo);
     if (fee_conf) {
       djs["fee_conf"] = fee_conf->ToJson();
@@ -706,6 +713,10 @@ class DcompactEtcdExecFactory final : public CompactExecFactoryCommon {
   }
   void Update(const json& js) final {
     CompactExecFactoryCommon::Update(js);
+    if (auto iter = js.find("copy_file_threads"); js.end() != iter) {
+      int copy_file_threads = iter.value().get<int>();
+      m_copy_file_threadpool->SetBackgroundThreads(copy_file_threads);
+    }
     ROCKSDB_JSON_OPT_PROP(js, timeout_multiplier);
     ROCKSDB_JSON_OPT_SIZE(js, estimate_speed);
     ROCKSDB_JSON_OPT_PROP(js, overall_timeout);
@@ -728,6 +739,10 @@ class DcompactEtcdExec : public CompactExecCommon {
   std::string m_labour_id;
   std::string m_full_server_id;
   std::vector<std::string> m_copyed_files;
+  hash_strmap<Status> m_copy_status;
+  size_t m_num_copy_err_files = 0;
+  std::mutex m_copy_mtx;
+  std::condition_variable m_copy_cond;
   string_appender<> m_url;
   DcompactMeta meta;
   uint64_t m_input_raw_key_bytes = 0;
@@ -803,6 +818,12 @@ Status DcompactEtcdExec::RenameFile(const std::string& src,
   return CompactExecCommon::RenameFile(src, dst, fsize);
 }
 
+struct DcompactCopyFileArgs {
+  DcompactEtcdExec* exe;
+  FileDescriptor* fd;
+  std::string src, dst;
+};
+
 Status DcompactEtcdExec::MaybeCopyFiles(const CompactionParams& params) {
   auto f = static_cast<const DcompactEtcdExecFactory*>(m_factory);
   if (!f->copy_sst_files)
@@ -820,21 +841,64 @@ Status DcompactEtcdExec::MaybeCopyFiles(const CompactionParams& params) {
   if (auto s = m_env->CreateDirIfMissing(dir); !s.ok())
     return s;
   auto& cf_paths = const_cast<CompactionParams&>(params).cf_paths;
+  size_t num_files = 0;
+  for (auto& lev : *params.inputs) {
+    num_files += lev.files.size();
+  }
+  m_copyed_files.reserve(num_files);
+  m_copy_status.reserve(num_files, 256 * num_files);
   size_t sum_size = 0;
   for (auto& lev : *params.inputs) {
     for (FileMetaData* file : lev.files) {
       FileDescriptor& fd = file->fd;
       sum_size += fd.file_size;
-      auto src = TableFileName(cf_paths, fd.GetNumber(), fd.GetPathId());
-      auto dst = MakeTableFileName(dir, fd.GetNumber());
-      auto status = CopyOneFile(src, dst, fd.file_size);
-      m_copyed_files.push_back(std::move(dst)); // maybe partially copyed
-      if (!status.ok())
-        return status;
-      // do not change packed_number_and_path_id because it is not owned by
-      // CompactionParams, but owned by VersionStorage, it will be fixed by
-      // dcompact_worker.
-      //file->fd.packed_number_and_path_id &= kFileNumberMask;
+      auto arg = new DcompactCopyFileArgs;
+      arg->exe = this;
+      arg->fd  = &fd;
+      arg->src = TableFileName(cf_paths, fd.GetNumber(), fd.GetPathId());
+      arg->dst = MakeTableFileName(dir, fd.GetNumber());
+      auto fun = [](void* vparg) {
+        auto  arg = (DcompactCopyFileArgs*)vparg;
+        auto  exe = arg->exe;
+        auto& src = arg->src;
+        auto& dst = arg->dst;
+        auto& fd  = *arg->fd;
+        auto status = exe->CopyOneFile(src, dst, fd.file_size);
+        exe->m_copy_mtx.lock();
+        if (!status.ok()) {
+          exe->m_num_copy_err_files++;
+        }
+        exe->m_copyed_files.push_back(std::move(dst)); // maybe partially copyed
+        exe->m_copy_status[src] = std::move(status);
+        exe->m_copy_cond.notify_one();
+        exe->m_copy_mtx.unlock();
+        delete arg;
+        // do not change packed_number_and_path_id because it is not owned by
+        // CompactionParams, but owned by VersionStorage, it will be fixed by
+        // dcompact_worker.
+        // fd.packed_number_and_path_id &= kFileNumberMask;
+      };
+      // if all compaction threads are busy, m_env->Schedule will dead lock
+      // m_env->Schedule(fun, arg);
+      // std::thread(fun, arg).detach(); // will create too many threads
+      f->m_copy_file_threadpool->SubmitJob([fun,arg](){fun(arg);});
+    }
+  }
+  {
+    auto shutting_down = m_params->shutting_down;
+    std::unique_lock<std::mutex> lock(m_copy_mtx);
+    while (m_copy_status.end_i() != num_files &&
+        !(shutting_down && shutting_down->load(std::memory_order_relaxed))) {
+      m_copy_cond.wait(lock);
+    }
+    if (m_num_copy_err_files) {
+      for (auto& dstFile : m_copyed_files)
+        m_env->DeleteFile(dstFile).PermitUncheckedError();
+      for (size_t i = 0; i < m_copy_status.end_i(); i++) {
+        Status& status = m_copy_status.val(i);
+        if (!status.ok())
+          return status;
+      }
     }
   }
   cf_paths = {{dir, UINT_MAX}};
@@ -863,7 +927,12 @@ Status DcompactEtcdExec::Execute(const CompactionParams& params,
     auto shutting_down = m_params->shutting_down;
     if (shutting_down && shutting_down->load(std::memory_order_relaxed)) {
       s = Status::ShutdownInProgress();
-      goto Done;
+      if (0 == m_attempt) {
+        for (auto& dstFile : m_copyed_files)
+          m_env->DeleteFile(dstFile).PermitUncheckedError();
+        return s;
+      } else
+        goto Done;
     }
     s = Attempt(params, results);
     if (s.ok())
