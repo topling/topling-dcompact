@@ -633,16 +633,14 @@ explicit Job(const DcompactMeta& meta)
     Status s = env->CreateDirIfMissing(subdir);
     TERARK_VERIFY_S(s.ok(), "CreateDirIfMissing(%s) = %s", subdir, s.ToString());
   }
-  CreateLogger("");
+  CreateLogger("LOG");
 }
 
-void CreateLogger(const std::string& subdir) {
-  DBOptions dbo;
-  dbo.db_log_dir;
-  dbo.info_log_level = INFO_LEVEL;
-  const std::string dbname = attempt_dbname + subdir;
-  Status s = CreateLoggerFromOptions(dbname, dbo, &m_log);
-  TERARK_VERIFY_S(s.ok(), "CreateLoggerFromOptions(%s) = %s", dbname, s.ToString());
+void CreateLogger(const char* basename) {
+  std::string log_fname = MakePath(attempt_dbname, basename);
+  Status s = env->NewLogger(log_fname, &m_log);
+  TERARK_VERIFY_S(s.ok(), "NewLogger(%s) = %s", log_fname, s.ToString());
+  m_log->SetInfoLogLevel(INFO_LEVEL);
 }
 
 string GetWorkerNodePath(const string& hostNodePath) const {
@@ -2153,7 +2151,7 @@ static void RunOneJob(const DcompactMeta& meta, mg_connection* conn) noexcept {
       if (0 == pid) { // child process
         prctl(PR_SET_PDEATHSIG, SIGKILL);
         // LOG is not inherited in child process, create a new one
-        j->CreateLogger("/child");
+        j->CreateLogger("LOG.child");
         auto info_log = j->m_log.get(); // intentional hide outer info_log
         DEBG("%s: fork to child time = %f sec", attempt_dir, pf.sf(t5, t6));
         run();
