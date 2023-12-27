@@ -1377,21 +1377,6 @@ auto writeObjResult = [&]{
   auto t3 = pf.now();
   const std::string end_time = StrDateTimeNow();
   ShowCompactionParams(params, cfd->current(), cfd, &start_time, &end_time, pf.sf(t0, t3));
-  if (terark::getEnvBool("DEL_WORKER_TEMP_DB", false)) {
-    std::error_code ec;
-    std::filesystem::remove_all(attempt_dbname, ec);
-    // if cur attempt is last attempt, DeleteDir will success
-    env->DeleteDir(job_dbname[3]); // dir job_id
-    auto t4 = pf.now();
-    INFO("finish %s: olev %d, work %.3f s, result %.3f ms, install %.3f ms, input{raw %s zip %s}, deldir %.6f ms",
-        attempt_dbname, params.output_level, pf.sf(t0,t1), pf.mf(t1,t2), pf.mf(t2,t3),
-        SizeToString(inputBytes[0]), SizeToString(inputBytes[1]), pf.sf(t3,t4));
-  }
-  else {
-    INFO("finish %s: olev %d, work %.3f s, result %.3f ms, install %.3f ms, input{raw %s zip %s}",
-        attempt_dbname, params.output_level, pf.sf(t0,t1), pf.mf(t1,t2), pf.mf(t2,t3),
-        SizeToString(inputBytes[0]), SizeToString(inputBytes[1]));
-  }
   if (!shutting_down.load(std::memory_order_acquire)) {
     std::string compact_done_file = attempt_dir + "/compact.done";
     int fd = ::creat(compact_done_file.c_str(), 0644);
@@ -1434,6 +1419,21 @@ auto writeObjResult = [&]{
       std::string fee_body = js.dump();
       HttpPost(FEE_URL, fee_body, info_log);
     }
+  }
+  if (terark::getEnvBool("DEL_WORKER_TEMP_DB", false)) {
+    std::error_code ec;
+    std::filesystem::remove_all(attempt_dbname, ec);
+    // if cur attempt is last attempt, DeleteDir will success
+    env->DeleteDir(job_dbname[3]); // dir job_id
+    auto t4 = pf.now();
+    INFO("finish %s: olev %d, work %.3f s, result %.3f ms, install %.3f ms, input{raw %s zip %s}, deldir %.6f ms",
+        attempt_dbname, params.output_level, pf.sf(t0,t1), pf.mf(t1,t2), pf.mf(t2,t3),
+        SizeToString(inputBytes[0]), SizeToString(inputBytes[1]), pf.sf(t3,t4));
+  }
+  else {
+    INFO("finish %s: olev %d, work %.3f s, result %.3f ms, install %.3f ms, input{raw %s zip %s}",
+        attempt_dbname, params.output_level, pf.sf(t0,t1), pf.mf(t1,t2), pf.mf(t2,t3),
+        SizeToString(inputBytes[0]), SizeToString(inputBytes[1]));
   }
 
   return 0;
