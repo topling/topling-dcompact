@@ -857,7 +857,7 @@ Status DcompactEtcdExec::MaybeCopyFiles(const CompactionParams& params) {
       arg->fd  = &fd;
       arg->src = TableFileName(cf_paths, fd.GetNumber(), fd.GetPathId());
       arg->dst = MakeTableFileName(dir, fd.GetNumber());
-      auto fun = [](void* vparg) {
+      static const auto fun = [](void* vparg) {
         auto  arg = (DcompactCopyFileArgs*)vparg;
         auto  exe = arg->exe;
         auto& src = arg->src;
@@ -881,7 +881,7 @@ Status DcompactEtcdExec::MaybeCopyFiles(const CompactionParams& params) {
       // if all compaction threads are busy, m_env->Schedule will dead lock
       // m_env->Schedule(fun, arg);
       // std::thread(fun, arg).detach(); // will create too many threads
-      f->m_copy_file_threadpool->SubmitJob([fun,arg](){fun(arg);});
+      f->m_copy_file_threadpool->SubmitJob([arg](){fun(arg);});
     }
   }
   {
