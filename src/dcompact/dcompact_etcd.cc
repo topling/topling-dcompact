@@ -1691,13 +1691,13 @@ void DcompactEtcdExec::CleanFiles(const CompactionParams& params,
       DEBG("DeleteFile %s", file);
       Status s = m_env->DeleteFile(file);
       if (!s.ok())
-        WARN("%s", s.ToString());
+        DEBG("%s", s.ToString());
     };
     auto rmdir = [&](const std::string& dir) {
       DEBG("DeleteDir %s", dir);
       Status s = m_env->DeleteDir(dir);
       if (!s.ok())
-        WARN("%s", s.ToString()), fail_num++;
+        DEBG("%s", s.ToString()), fail_num++;
     };
     for (const std::string& file : m_copyed_files) {
       ROCKSDB_VERIFY(f->copy_sst_files);
