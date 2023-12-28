@@ -1101,8 +1101,12 @@ int RunCompact(FILE* in, FILE* out) const {
   if (TOPLINGDB_CACHE_SST_FILE_ITER) {
     WARN("env TOPLINGDB_CACHE_SST_FILE_ITER is true, sst would not be closed asap!");
   }
-  // minimize table cache capacity(=1), let sst file becing closed asap
-  shared_ptr<Cache> table_cache = NewLRUCache(1); // capacity is not strict
+  // HTML_WRITE_SST_LIST requires calling TableReader::GetTableProperties for
+  // each sst file, which will load sst files, on cloud(aws.s3/aliyun.oss),
+  // load file may be heavy, esp when files were not cached on local disk.
+  mut_dbo.max_open_files = HTML_WRITE_SST_LIST ? TableCache::kInfiniteCapacity
+                                               : 1; // capacity is not strict
+  shared_ptr<Cache> table_cache = NewLRUCache(mut_dbo.max_open_files);
   BlockCacheTracer* block_cache_tracer = nullptr;
   const std::shared_ptr<IOTracer> io_tracer(nullptr);
   unique_ptr<VersionSet> versions(
