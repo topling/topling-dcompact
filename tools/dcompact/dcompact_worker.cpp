@@ -669,22 +669,29 @@ void ShowCompactionParams(const CompactionParams& p, Version* const v,
                           const std::string* t1 = nullptr,
                           const double dur = -1.0) const {
   const string& attempt_dbname = job_dbname[4];
-  std::string summary_fname = attempt_dbname + "/summary.html";
+  std::string summary_fname;
   json time;
+  std::string link; link.reserve(1024);
+  link += "<a href='LOG'>LOG</a> | ";
+  if (MULTI_PROCESS) {
+    link += "<a href='LOG.child'>LOG.child</a> | ";
+  }
   if (t1 != nullptr) {
     summary_fname = attempt_dbname + "/summary-done.html";
-    time["link"] = "<a href='summary.html'>on compact start</a>";
+    link += "<a href='summary.html'>on compact start</a>";
     time["time"]["start"] = *t0;
     time["time"]["end"] = *t1;
     time["time"]["duration"] = std::to_string(dur) + " sec";
     time["time"]["speed"] = SizeToString(inputBytes[0]/dur) + " / sec";
   } else {
-    time["link"] = "<a href='summary-done.html'>on compact done</a>";
+    summary_fname = attempt_dbname + "/summary.html";
+    link += "<a href='summary-done.html'>on compact done</a>";
     time["time"]["start"] = *t0;
     time["time"]["end"] = "unfinished";
     time["time"]["duration"] = "unfinished";
   }
   time["fee_units"] = sqrt(double(inputBytes[0]) * inputBytes[1]) / 1e6;
+  time["link"] = std::move(link);
 
   json js;
   js["overview"]["job_id"] = p.job_id;
