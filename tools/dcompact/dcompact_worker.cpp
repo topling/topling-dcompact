@@ -708,17 +708,7 @@ void ShowCompactionParams(const CompactionParams& p, Version* const v,
 
   js["cf"]["cf_id"] = p.cf_id;
   js["cf"]["cf_name"] = p.cf_name;
-  auto& cf_paths = cfd->ioptions()->cf_paths;
-  if (cf_paths.empty()) {
-    js["cf"]["cf_paths"] = "";
-  } else {
-    for (size_t i = 0; i < cf_paths.size(); ++i) {
-      json tmp;
-      tmp["path"] = cf_paths[i].path;
-      tmp["target_size"] = SizeToString(cf_paths[i].target_size);
-      js["cf"]["cf_paths"].push_back(std::move(tmp));
-    }
-  }
+  js["cf"]["cf_paths"] = DbPathVecToJson(cfd->ioptions()->cf_paths, true);
 
   if (HTML_WRITE_SST_LIST) {
     js["sst files"] = Json_DB_CF_SST_HtmlTable(v, cfd);
