@@ -333,6 +333,7 @@ static const string LABOUR_ID = getEnvStr("LABOUR_ID", "");
 static const string CLOUD_PROVIDER = getEnvStr("CLOUD_PROVIDER", "");
 static const char* WEB_DOMAIN = getenv("WEB_DOMAIN");
 static const bool MULTI_PROCESS = getEnvBool("MULTI_PROCESS", false);
+static const bool HTML_WRITE_SST_LIST = getEnvBool("HTML_WRITE_SST_LIST", false);
 static const bool TOPLINGDB_CACHE_SST_FILE_ITER
     = getEnvBool("TOPLINGDB_CACHE_SST_FILE_ITER", false);
 
@@ -669,8 +670,6 @@ void ShowCompactionParams(const CompactionParams& p, Version* const v,
                           const double dur = -1.0) const {
   const string& attempt_dbname = job_dbname[4];
   std::string summary_fname = attempt_dbname + "/summary.html";
-  TableProperties agg;
-  std::string inputs = Json_DB_CF_SST_HtmlTable(v, cfd, &agg);
   json time;
   if (t1 != nullptr) {
     summary_fname = attempt_dbname + "/summary-done.html";
@@ -678,7 +677,7 @@ void ShowCompactionParams(const CompactionParams& p, Version* const v,
     time["time"]["start"] = *t0;
     time["time"]["end"] = *t1;
     time["time"]["duration"] = std::to_string(dur) + " sec";
-    time["time"]["speed"] = SizeToString((agg.raw_key_size + agg.raw_value_size)/dur) + " / sec";
+    time["time"]["speed"] = SizeToString(inputBytes[0]/dur) + " / sec";
   } else {
     time["link"] = "<a href='summary-done.html'>on compact done</a>";
     time["time"]["start"] = *t0;
@@ -712,7 +711,10 @@ void ShowCompactionParams(const CompactionParams& p, Version* const v,
       js["cf"]["cf_paths"].push_back(tmp);
     }
   }
-  js["inputs"] = std::move(inputs);
+
+  if (HTML_WRITE_SST_LIST) {
+    js["sst files"] = Json_DB_CF_SST_HtmlTable(v, cfd);
+  }
 
   if (p.grandparents == nullptr || p.grandparents->empty()) {
     js["grand<br/>parents"] = "";
