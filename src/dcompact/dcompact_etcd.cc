@@ -901,7 +901,7 @@ Status DcompactEtcdExec::MaybeCopyFiles(const CompactionParams& params) {
       }
     }
   }
-  cf_paths = {{dir, UINT_MAX}};
+  cf_paths = {{dir, UINT64_MAX}};
   auto t1 = m_env->NowMicros();
   INFO("MaybeCopyFiles(%s[%s]/job-%05d) time %.3f sec, size %12s, speed %7.3f MB/s",
        dbname, params.cf_name, params.job_id, (t1-t0)/1e6,
