@@ -1267,13 +1267,18 @@ try
   }
   else if (!*shutting_down) {
     auto tt = m_env->NowMicros();
-    s = Status::TimedOut("DcompactEtcdExec::Attempt", ExceptionFormatString(
+    Slice msg1 = "DcompactEtcdExec::Attempt";
+    std::string msg2 = ExceptionFormatString(
           "job-%05d/att-%02d: at %s estimate timeout %.6f sec, "
           "real %.6f (submit %.6f s wait %.6f ms), input %s, send shutdown",
           params.job_id, m_attempt, m_url.c_str(), timeout_us/1e6,
           (tt-t2)/1e6, (t4-t3)/1e3, (t5-t4)/1e6,
-          SizeToString(input_raw_bytes()).c_str()));
-    ROCKS_LOG_ERROR(m_log, "%s", s.ToString().c_str());
+          SizeToString(input_raw_bytes()).c_str());
+    if (t5-t4 >= timeout_us)
+      s = Status::TimedOut(msg1, msg2);
+    else
+      s = Status::Corruption(msg1, msg2);
+    ROCKS_LOG_ERROR(m_log, "DcompactEtcdExec::Attempt: %s", msg2.c_str());
     SubmitHttp("/shutdown", meta_jstr, nth_http);
   }
   else {
