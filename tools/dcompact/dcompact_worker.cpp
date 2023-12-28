@@ -701,14 +701,15 @@ void ShowCompactionParams(const CompactionParams& p, Version* const v,
 
   js["cf"]["cf_id"] = p.cf_id;
   js["cf"]["cf_name"] = p.cf_name;
-  if (p.cf_paths.empty()) {
+  auto& cf_paths = cfd->ioptions()->cf_paths;
+  if (cf_paths.empty()) {
     js["cf"]["cf_paths"] = "";
   } else {
-    for (size_t i = 0; i < p.cf_paths.size(); ++i) {
+    for (size_t i = 0; i < cf_paths.size(); ++i) {
       json tmp;
-      tmp["path"] = p.cf_paths[i].path;
-      tmp["target_size"] = SizeToString(p.cf_paths[i].target_size);
-      js["cf"]["cf_paths"].push_back(tmp);
+      tmp["path"] = cf_paths[i].path;
+      tmp["target_size"] = SizeToString(cf_paths[i].target_size);
+      js["cf"]["cf_paths"].push_back(std::move(tmp));
     }
   }
 
