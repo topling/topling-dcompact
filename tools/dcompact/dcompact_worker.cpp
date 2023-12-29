@@ -668,31 +668,6 @@ void ShowCompactionParams(const CompactionParams& p, Version* const v,
                           ColumnFamilyData* const cfd, const std::string* t0,
                           const std::string* t1 = nullptr,
                           const double dur = -1.0) const {
-  const string& attempt_dbname = job_dbname[4];
-  std::string summary_fname;
-  json time;
-  std::string link; link.reserve(1024);
-  link += "<a href='LOG'>LOG</a> | ";
-  if (MULTI_PROCESS) {
-    link += "<a href='LOG.child'>LOG.child</a> | ";
-  }
-  if (t1 != nullptr) {
-    summary_fname = attempt_dbname + "/summary-done.html";
-    link += "<a href='summary.html'>on compact start</a>";
-    time["time"]["start"] = *t0;
-    time["time"]["end"] = *t1;
-    time["time"]["duration"] = std::to_string(dur) + " sec";
-    time["time"]["speed"] = SizeToString(inputBytes[0]/dur) + " / sec";
-  } else {
-    summary_fname = attempt_dbname + "/summary.html";
-    link += "<a href='summary-done.html'>on compact done</a>";
-    time["time"]["start"] = *t0;
-    time["time"]["end"] = "unfinished";
-    time["time"]["duration"] = "unfinished";
-  }
-  time["fee_units"] = sqrt(double(inputBytes[0]) * inputBytes[1]) / 1e6;
-  time["link"] = std::move(link);
-
   json js;
   js["overview"]["job_id"] = p.job_id;
   js["overview"]["num_levels"] = p.num_levels;
@@ -952,20 +927,31 @@ void ShowCompactionParams(const CompactionParams& p, Version* const v,
     js["Others"]["shutting_down"] = "";
   }
 
-  FILE* summary_file = fopen(summary_fname.c_str(), "w");
+  auto fpath = attempt_dbname + (t1 ? "/summary-done.html" : "/summary.html");
+  FILE* fp = fopen(fpath.c_str(), "w");
+  fprintf(fp, "<html><title>%s job-%05d/att-%02d</title>\n"
+    "<body>\n<link rel='stylesheet' type='text/css' href='/style.css'>\n"
+    , t1 == nullptr ? "start" : "done", m_meta.job_id, m_meta.attempt);
+  fprintf(fp, "<p>");
+  fprintf(fp, "fee_units %.3f, ", sqrt(double(inputBytes[0]) * inputBytes[1]) / 1e6);
+  if (t1 == nullptr) {
+    fprintf(fp, "start %s, <a href='summary-done.html'>end</a>", t0->c_str());
+  } else {
+    fprintf(fp, "<a href='summary.html'>start %s</a> ~ %s, <b>%.3f</b> sec, speed %s/sec"
+      , t0->c_str(), t1->c_str(), dur, SizeToString(inputBytes[0]/dur).c_str());
+  }
+  fprintf(fp, " | <a href='LOG'>LOG</a>");
+  if (MULTI_PROCESS) {
+    fprintf(fp, " | <a href='LOG.child'>LOG.child</a>");
+  }
+  fprintf(fp, "</p>");
   auto write_str = [](FILE* fp, Slice s) {
     fwrite(s.data(), 1, s.size(), fp);
     fprintf(fp, "\n");
   };
-  fprintf(summary_file, "<html><title>dcompact %s job-%05d/att-%02d</title>\n"
-    "<body>\n<link rel='stylesheet' type='text/css' href='/style.css'>\n"
-    , t1 == nullptr ? "start" : "done", m_meta.job_id, m_meta.attempt
-    );
-  json dump_options = {{"html", "1"}};
-  write_str(summary_file, JsonToString(time, dump_options));
-  write_str(summary_file, JsonToString(js, dump_options));
-  fprintf(summary_file, "</body>");
-  fclose(summary_file);
+  write_str(fp, JsonToString(js, {{"html", "1"}}));
+  fprintf(fp, "</body>");
+  fclose(fp);
 }
 int RunCompact(FILE* in, FILE* out) const {
   const string worker_dir = GetWorkerNodePath(m_meta.output_root);
