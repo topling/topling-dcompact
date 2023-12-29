@@ -952,13 +952,19 @@ void ShowCompactionParams(const CompactionParams& p, Version* const v,
     js["Others"]["shutting_down"] = "";
   }
 
-  json dump_options;
-  dump_options["html"] = "1";
-  std::string html =
-      JsonToString(time, dump_options) + JsonToString(js, dump_options);
-
   FILE* summary_file = fopen(summary_fname.c_str(), "w");
-  fwrite(html.c_str(), 1, html.size(), summary_file);
+  auto write_str = [](FILE* fp, Slice s) {
+    fwrite(s.data(), 1, s.size(), fp);
+    fprintf(fp, "\n");
+  };
+  fprintf(summary_file, "<html><title>dcompact %s job-%05d/att-%02d</title>\n"
+    "<body>\n<link rel='stylesheet' type='text/css' href='/style.css'>\n"
+    , t1 == nullptr ? "start" : "done", m_meta.job_id, m_meta.attempt
+    );
+  json dump_options = {{"html", "1"}};
+  write_str(summary_file, JsonToString(time, dump_options));
+  write_str(summary_file, JsonToString(js, dump_options));
+  fprintf(summary_file, "</body>");
   fclose(summary_file);
 }
 int RunCompact(FILE* in, FILE* out) const {
