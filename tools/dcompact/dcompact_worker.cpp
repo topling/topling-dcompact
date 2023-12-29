@@ -981,6 +981,7 @@ int RunCompact(FILE* in, FILE* out) const {
   ColumnFamilyOptions cfo;
   cfo.comparator = nullptr; // will set from rpc
   cfo.table_factory = nullptr;
+  cfo.level_compaction_dynamic_level_bytes = false; // true yield warnings
 
 // MyCreatePlugin really bind deserialize function
 #define MyCreatePlugin2(obj, field1, field2) \
