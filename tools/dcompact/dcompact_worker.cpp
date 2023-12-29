@@ -686,7 +686,7 @@ void ShowCompactionParams(const CompactionParams& p, Version* const v,
   js["cf"]["cf_paths"] = DbPathVecToJson(cfd->ioptions()->cf_paths, true);
 
   if (HTML_WRITE_SST_LIST) {
-    js["sst files"] = Json_DB_CF_SST_HtmlTable(v, cfd);
+    js[t1 ? "outputs" : "inputs"] = Json_DB_CF_SST_HtmlTable(v, cfd);
   }
 
   if (p.grandparents == nullptr || p.grandparents->empty()) {
