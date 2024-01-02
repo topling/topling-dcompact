@@ -836,10 +836,12 @@ Status DcompactEtcdExec::MaybeCopyFiles(const CompactionParams& params) {
   std::string dir = f->hoster_root + "/" + dbname;
   auto t0 = m_env->NowMicros();
   m_env->CreateDirIfMissing(dir);
+ #if 0
   dir += "/";
   dir += params.cf_name;
   if (auto s = m_env->CreateDirIfMissing(dir); !s.ok())
     return s;
+ #endif
   auto& cf_paths = const_cast<CompactionParams&>(params).cf_paths;
   size_t num_files = 0;
   for (auto& lev : *params.inputs) {
