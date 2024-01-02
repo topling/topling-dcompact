@@ -1457,12 +1457,18 @@ static void write_html_header(struct mg_connection* conn, const json& query, con
   int refresh = JsonSmartInt(query, "refresh", 0);
   if (refresh > 0) {
     mg_printf(conn,
-      "<html><title>%s</title>\n"
+      "<html><head>"
+      "<title>%s</title>\n"
       "<meta http-equiv='refresh' content='%d'>\n"
+      "<link rel='stylesheet' type='text/css' href='/style.css'>\n"
+      "</head>"
       "<body>\n", name, refresh);
   }
   else {
-    mg_printf(conn, "<html><title>%s</title><body>\n", name);
+    mg_printf(conn, "<html><head><title>%s</title>"
+      "<link rel='stylesheet' type='text/css' href='/style.css'>\n"
+      "</head>"
+      "<body>\n", name);
   }
   if (from_db_node) {
     mg_printf(conn, "<p>%s</p>\n", cur_time_stat().c_str());
