@@ -175,7 +175,7 @@ ALL_DLL := ${DLL_BINS_A} ${DLL_BINS_D} ${DLL_BINS_R}
 ALL_BIN := ${ALL_EXE} ${ALL_DLL}
 
 LINK_ROCKSDB_R := -L${ROCKSDB_HOME} -lrocksdb
-LINK_ROCKSDB_A := -L${ROCKSDB_HOME} -lrocksdb_debug
+LINK_ROCKSDB_A := -L${ROCKSDB_HOME} -lrocksdb_debug_1
 LINK_ROCKSDB_D := -L${ROCKSDB_HOME} -lrocksdb_debug
 
 ext_ldflags = $(strip $(shell sed -n 's,.*//Makefile\s*:\s*LDFLAGS\s*:\s*\(.*\),\1,p' $(subst .exe,.cpp,$(subst ${AFR_DIR}/,,$(subst ${RLS_DIR}/,,$(subst ${DBG_DIR}/,,$@))))))
