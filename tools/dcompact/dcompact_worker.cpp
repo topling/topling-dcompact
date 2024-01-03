@@ -333,7 +333,6 @@ static const string LABOUR_ID = getEnvStr("LABOUR_ID", "");
 static const string CLOUD_PROVIDER = getEnvStr("CLOUD_PROVIDER", "");
 static const char* WEB_DOMAIN = getenv("WEB_DOMAIN");
 static const bool MULTI_PROCESS = getEnvBool("MULTI_PROCESS", false);
-static const bool HTML_WRITE_SST_LIST = getEnvBool("HTML_WRITE_SST_LIST", false);
 static const bool TOPLINGDB_CACHE_SST_FILE_ITER
     = getEnvBool("TOPLINGDB_CACHE_SST_FILE_ITER", false);
 
@@ -685,9 +684,7 @@ void ShowCompactionParams(const CompactionParams& p, Version* const v,
   js["cf"]["cf_name"] = p.cf_name;
   js["cf"]["cf_paths"] = DbPathVecToJson(cfd->ioptions()->cf_paths, true);
 
-  if (HTML_WRITE_SST_LIST) {
-    js[t1 ? "outputs" : "inputs"] = Json_DB_CF_SST_HtmlTable(v, cfd);
-  }
+  js[t1 ? "outputs" : "inputs"] = Json_DB_CF_SST_HtmlTable(v, cfd);
 
   if (p.grandparents == nullptr || p.grandparents->empty()) {
     js["grand<br/>parents"] = "";
@@ -1092,11 +1089,7 @@ int RunCompact(FILE* in, FILE* out) const {
   if (TOPLINGDB_CACHE_SST_FILE_ITER) {
     WARN("env TOPLINGDB_CACHE_SST_FILE_ITER is true, sst would not be closed asap!");
   }
-  // HTML_WRITE_SST_LIST requires calling TableReader::GetTableProperties for
-  // each sst file, which will load sst files, on cloud(aws.s3/aliyun.oss),
-  // load file may be heavy, esp when files were not cached on local disk.
-  mut_dbo.max_open_files = HTML_WRITE_SST_LIST ? TableCache::kInfiniteCapacity
-                                               : 1; // capacity is not strict
+  mut_dbo.max_open_files = 1; // capacity is not strict
   shared_ptr<Cache> table_cache = NewLRUCache(mut_dbo.max_open_files);
   BlockCacheTracer* block_cache_tracer = nullptr;
   const std::shared_ptr<IOTracer> io_tracer(nullptr);
@@ -1270,6 +1263,15 @@ int RunCompact(FILE* in, FILE* out) const {
   MutexUnlock();
   VERIFY_S_EQ(compaction.GetSmallestUserKey(), params.smallest_user_key);
   VERIFY_S_EQ(compaction.GetLargestUserKey() , params.largest_user_key);
+  if (params.table_properties_map.empty()) {
+    WARN("%s: params.table_properties_map is empty", attempt_dir);
+  } else {
+    Version* input_version = cfd->current();
+    for (auto& [file_no, props] : params.table_properties_map) {
+      std::string fpath = TableFileName(cfo.cf_paths, file_no, 0/*path_id*/);
+      input_version->props_of_all_tables_[std::move(fpath)] = props;
+    }
+  }
   const std::string start_time = StrDateTimeNow();
   ShowCompactionParams(params, cfd->current(), cfd, &start_time);
   {
@@ -1370,6 +1372,8 @@ auto writeObjResult = [&]{
     }
   }
   log_buffer.FlushBufferToLog();
+  cfd->current()->props_of_all_tables_ = compaction.GetOutputTableProperties();
+
   // compact end time
   auto t3 = pf.now();
   const std::string end_time = StrDateTimeNow();

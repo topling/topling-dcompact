@@ -196,6 +196,63 @@ DATA_IO_LOAD_SAVE_E(CompactionInputFiles,
                   )
 DATA_IO_DUMP_RAW_MEM_E(VersionSetSerDe)
 
+DATA_IO_LOAD_SAVE_EV(TableProperties,
+                     1, // Current wire version
+                   & orig_file_number
+                   & data_size
+                   & index_size
+                   & tag_size
+                   & gdic_size
+                   & index_partitions
+                   & top_level_index_size
+                   & index_key_is_user_key
+                   & index_value_is_delta_encoded
+                   & filter_size
+                   & raw_key_size
+                   & raw_value_size
+                   & num_data_blocks
+                   & num_entries
+                   & num_filter_entries
+                   & num_deletions
+                   & num_merge_operands
+                   & num_range_deletions
+                   & format_version
+                   & fixed_key_len
+                   & fixed_value_len
+                   & column_family_id
+                   & creation_time
+                   & oldest_key_time
+                   & file_creation_time
+                   & slow_compression_estimated_data_size
+                   & fast_compression_estimated_data_size
+                   & external_sst_file_global_seqno_offset
+                   & tail_start_offset
+                   & db_id
+                   & db_session_id
+                   & db_host_id
+                   & column_family_name
+                   & filter_policy_name
+                   & comparator_name
+                   & merge_operator_name
+                   & prefix_extractor_name
+                   & property_collectors_names
+                   & compression_name
+                   & compression_options
+                   & seqno_to_time_mapping
+                   & user_collected_properties
+                   & readable_properties
+                   )
+
+template<class DataIO>
+void DataIO_loadObject(DataIO& dio, std::shared_ptr<const TableProperties>& p) {
+  p = std::make_shared<const TableProperties>();
+  dio >> const_cast<TableProperties&>(*p);
+}
+template<class DataIO>
+void DataIO_saveObject(DataIO& dio, const std::shared_ptr<const TableProperties>& p) {
+  dio << *p;
+}
+
 // now just for listeners and table_properties_collector_factories
 template<class DataIO>
 void DataIO_loadObject(DataIO& dio, std::vector<ObjectRpcParam>& vec) {
@@ -209,7 +266,7 @@ void DataIO_loadObject(DataIO& dio, std::vector<ObjectRpcParam>& vec) {
 DATA_IO_DUMP_RAW_MEM_E(CompactionStyle);
 DATA_IO_DUMP_RAW_MEM_E(CompactionPri);
 
-constexpr unsigned CurrentParamsVersion = 1;
+constexpr unsigned CurrentParamsVersion = 2;
 DATA_IO_LOAD_SAVE_EV(CompactionParams, CurrentParamsVersion,
                   & job_id & num_levels & output_level & cf_id
                   & cf_name
@@ -239,6 +296,7 @@ DATA_IO_LOAD_SAVE_EV(CompactionParams, CurrentParamsVersion,
                   & compaction_style & compaction_pri
                   & listeners
                   & table_properties_collector_factories
+                  & vmg.since(2, table_properties_map)
                   & ExplicitSerDePointer(existing_snapshots)
                 //& ExplicitSerDePointer(compaction_job_stats)
                   & extensible_js_data
@@ -490,6 +548,26 @@ void CompactExecCommon::SetParams(CompactionParams* params, const Compaction* c)
   params->instance_name = m_factory->instance_name;
   params->level_compaction_dynamic_file_size = imm_cfo.level_compaction_dynamic_file_size;
   static_cast<CompactionParamsJS*>(params)->update_extensible_js_data();
+
+  Version* v = c->input_version();
+  ReadOptions ro;
+  for (auto& each_level : *c->inputs()) {
+    for (auto* file_meta : each_level.files) {
+      std::shared_ptr<const TableProperties> tp;
+      auto file_no = file_meta->fd.GetNumber();
+      auto path_id = file_meta->fd.GetPathId();
+      Status s = v->GetTableProperties(ro, &tp, file_meta);
+      if (s.ok()) {
+        // ignore path_id
+        params->table_properties_map[file_no] = tp;
+      } else {
+        std::string fpath = TableFileName(imm_cfo.cf_paths, file_no, path_id);
+        ROCKS_LOG_WARN(imm_cfo.info_log,
+         "CompactExecCommon::SetParams: job-%05d: GetTableProperties(%s) = %s",
+          params->job_id, fpath.c_str(), s.ToString().c_str());
+      }
+    }
+  }
 
   TRAC("CompactExecCommon::SetParams():\n%s", params->DebugString());
 }
