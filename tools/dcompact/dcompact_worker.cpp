@@ -17,6 +17,7 @@
 #include <terark/io/FileStream.hpp>
 #include <terark/lru_map.hpp>
 #include <terark/num_to_str.hpp>
+#include <terark/util/process.hpp>
 #include <terark/util/linebuf.hpp>
 #include <terark/util/process.hpp>
 #include <terark/util/profiling.hpp>
@@ -1792,6 +1793,49 @@ class HealthHttpHandler : public CivetHandler {
   }
 };
 
+class CommandHttpHandler : public CivetHandler {
+ public:
+  bool handleGet(CivetServer*, struct mg_connection* conn) override {
+    if (g_stop) {
+      mg_write(conn, "HTTP/1.1 412 Precondition Failed\r\n"
+                     "Content-Type: text/json\r\n\r\n"
+                     "{\"status\": \"Compact Worker is stopping\"}");
+    } else {
+      const mg_request_info* req = mg_get_request_info(conn);
+      fstring q = req->query_string;
+      char* cmd = (char*)alloca(q.size()); // cmd len < q.size()
+      int ret = mg_get_var(q.p, q.size(), "cmd", cmd, q.size());
+      if (ret > 0) {
+        std::string out_err[2];
+        std::string except;
+        vfork_cmd({cmd, ret}, nullptr,
+          [&](std::string&& out, std::string&& err, const std::exception* ex) {
+            out_err[0] = std::move(out);
+            out_err[1] = std::move(err);
+            except = ex ? ex->what() : "(null)";
+          });
+        mg_printf(conn, "HTTP/1.1 200 OK\r\nContent-Type: text/json\r\n\r\n"
+                  "{\"status\": \"OK\"}\r\n"
+                  "command exception: %s\r\n"
+                  "command stderr: %s\r\n"
+                  "command stdout: %s\r\n",
+                  except.c_str(), out_err[1].c_str(), out_err[0].c_str());
+      } else {
+        mg_write(conn, "HTTP/1.1 200 OK\r\nContent-Type: text/json\r\n\r\n"
+                      "{\"status\": \"missing param cmd\"}");
+      }
+    }
+    return true;
+  }
+#if CIVETWEB_VERSION_MAJOR * 100000 + CIVETWEB_VERSION_MINOR * 100 >= 1*100000 + 15*100
+  using CivetHandler::handlePost;
+#endif
+  bool handlePost(CivetServer* server, struct mg_connection* conn) override {
+    return handleGet(server, conn);
+  }
+};
+
+
 static int main(int argc, char* argv[]) {
   SetAsCompactionWorker();
   Logger* info_log = nullptr;
@@ -1868,6 +1912,7 @@ static int main(int argc, char* argv[]) {
   StatHttpHandler handle_stat;
   StopHttpHandler handle_stop;
   HealthHttpHandler handle_health;
+  CommandHttpHandler handle_command;
   civet.addHandler("/dcompact", handle_dcompact);
   civet.addHandler("/shutdown", handle_shutdown);
   civet.addHandler("/probe", handle_probe);
@@ -1875,6 +1920,7 @@ static int main(int argc, char* argv[]) {
   civet.addHandler("/stat", handle_stat);
   if (getEnvBool("ENABLE_HTTP_STOP", false)) {
     civet.addHandler("/stop", handle_stop); // stop process
+    civet.addHandler("/command", handle_command);
   }
   civet.addHandler("/health", handle_health);
   INFO("CivetServer setup ok, start work threads");
