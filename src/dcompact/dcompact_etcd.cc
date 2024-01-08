@@ -1808,14 +1808,14 @@ const {
   string_appender<std::string> str;
   str.reserve(64*1024);
   str|"<script>document.getElementById('time_stat_line').innerHTML += `";
-  str|" , CumuExec = "|num_cumu_exec;
-  str|" , LiveExec = "|num_live_exec;
-  str^" , Speed = %.3f"^speed_mbps^" MB/sec, Total: ";
-  str|"Key = "|SizeToString(m_stat_sum.m_sum_input_raw_key_bytes)|", ";
-  str|"Val = "|SizeToString(m_stat_sum.m_sum_input_raw_val_bytes)|", ";
-  str|"ZipKV = "|SizeToString(m_stat_sum.m_sum_input_zip_kv_bytes)|", ";
-  str|"Units = "|fee_units(m_stat_sum.sum_input_raw_bytes(),
-                           m_stat_sum.sum_input_zip_bytes());
+  str|" , Cumu "|num_cumu_exec;
+  str|" , Live "|num_live_exec;
+  str^" , Speed %.3f"^speed_mbps^" MB/sec, Total: ";
+  str|"Key "|SizeToString(m_stat_sum.m_sum_input_raw_key_bytes)|", ";
+  str|"Val "|SizeToString(m_stat_sum.m_sum_input_raw_val_bytes)|", ";
+  str|"ZipKV "|SizeToString(m_stat_sum.m_sum_input_zip_kv_bytes)|", ";
+  str|"Units "|fee_units(m_stat_sum.sum_input_raw_bytes(),
+                         m_stat_sum.sum_input_zip_bytes());
   bool allworkers = JsonSmartBool(dump_options, "allworkers", true);
   str|"&nbsp;&nbsp;&nbsp;";
   str^R"(<a href='javascript:SetParam("allworkers","%d")'>)"^!allworkers;
