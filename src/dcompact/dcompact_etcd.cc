@@ -496,6 +496,7 @@ class DcompactEtcdExecFactory final : public CompactExecFactoryCommon {
   uint64_t    m_start_time_epoch; // for ReportFee
   size_t estimate_speed = 10e6; // speed in bytes-per-second
   size_t max_book_dbcf = 20;
+  std::string oneshot_dbname_prefix; // when copy_sst_files is true
   bool copy_sst_files = false;
   bool web_show_secret = false;
   float timeout_multiplier = 10.0;
@@ -552,6 +553,7 @@ class DcompactEtcdExecFactory final : public CompactExecFactoryCommon {
       m_start_time_epoch = rawtime;
     }
     CompactExecFactoryCommon::init(js, repo);
+    ROCKSDB_JSON_OPT_PROP(js, oneshot_dbname_prefix);
     ROCKSDB_JSON_OPT_PROP(js, copy_sst_files);
     ROCKSDB_JSON_OPT_PROP(js, web_show_secret);
     ROCKSDB_JSON_OPT_PROP(js, alert_email);
@@ -664,6 +666,7 @@ class DcompactEtcdExecFactory final : public CompactExecFactoryCommon {
     djs["estimate_speed"] = ToStr("%.3f MB/sec", estimate_speed/1e6);
     ROCKSDB_JSON_SET_PROP(djs, timeout_multiplier);
     djs["stat"] = m_stat_map.ToJson(html);
+    ROCKSDB_JSON_SET_PROP(djs, oneshot_dbname_prefix);
     ROCKSDB_JSON_SET_PROP(djs, copy_sst_files);
 #ifdef TOPLING_DCOMPACT_USE_ETCD
     ROCKSDB_JSON_SET_PROP(djs, etcd_root);
@@ -832,7 +835,7 @@ Status DcompactEtcdExec::MaybeCopyFiles(const CompactionParams& params) {
     TERARK_VERIFY_S(!Slice(cf_path.path).starts_with(f->hoster_root),
                     "%s : %s", cf_path.path, f->hoster_root);
   const std::string& dbpath = params.dbname;
-  std::string dbname = basename(dbpath.c_str());
+  const char* dbname = basename(dbpath.c_str());
   std::string dir = f->hoster_root + "/" + dbname;
   auto t0 = m_env->NowMicros();
   m_env->CreateDirIfMissing(dir);
@@ -1723,6 +1726,13 @@ void DcompactEtcdExec::CleanFiles(const CompactionParams& params,
         g_delayed_rm_queue_mtx.lock();
         g_delayed_rm_queue.push_back(job_dir);
         g_delayed_rm_queue_mtx.unlock();
+      }
+    }
+    if (f->copy_sst_files && !f->oneshot_dbname_prefix.empty()) {
+      const std::string& dbpath = params.dbname;
+      fstring dbname = basename(dbpath.c_str()); // now for simpliciy
+      if (dbname.starts_with(f->oneshot_dbname_prefix)) {
+        rmdir(f->hoster_root + "/" + dbname);
       }
     }
   }
