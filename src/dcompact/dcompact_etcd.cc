@@ -1684,6 +1684,8 @@ void DcompactEtcdExec::CleanFiles(const CompactionParams& params,
       ReportFee(params, results);
     }
   }
+  const std::string& dbpath = params.dbname;
+  fstring dbname = basename(dbpath.c_str()); // now for simpliciy
   auto t0 = m_env->NowMicros();
   char buf[64];
   const std::string& base_dir = params.cf_paths.back().path;
@@ -1729,16 +1731,12 @@ void DcompactEtcdExec::CleanFiles(const CompactionParams& params,
       }
     }
     if (f->copy_sst_files && !f->oneshot_dbname_prefix.empty()) {
-      const std::string& dbpath = params.dbname;
-      fstring dbname = basename(dbpath.c_str()); // now for simpliciy
       if (dbname.starts_with(f->oneshot_dbname_prefix)) {
         rmdir(f->hoster_root + "/" + dbname);
       }
     }
   }
   if (m_worker) {
-    const std::string& dbpath = params.dbname;
-    fstring dbname = basename(dbpath.c_str()); // now for simpliciy
     m_worker->m_running_mtx.lock();
     auto& labour = m_worker->m_running[m_labour_id];
     TERARK_VERIFY(labour[dbname].erase(this));
