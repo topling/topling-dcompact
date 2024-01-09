@@ -633,7 +633,9 @@ class DcompactEtcdExecFactory final : public CompactExecFactoryCommon {
     m_round_robin_idx = m_rand_gen() % http_workers.size();
   }
   ~DcompactEtcdExecFactory() override {
-    m_copy_file_threadpool->JoinAllThreads();
+    if (m_copy_file_threadpool) {
+      m_copy_file_threadpool->JoinAllThreads();
+    }
 #ifdef TOPLING_DCOMPACT_USE_ETCD
     delete m_etcd;
 #endif
@@ -726,9 +728,11 @@ class DcompactEtcdExecFactory final : public CompactExecFactoryCommon {
   }
   void Update(const json& js) final {
     CompactExecFactoryCommon::Update(js);
-    if (auto iter = js.find("copy_file_threads"); js.end() != iter) {
-      int copy_file_threads = iter.value().get<int>();
-      m_copy_file_threadpool->SetBackgroundThreads(copy_file_threads);
+    if (m_copy_file_threadpool) { // will not be set in constructor
+      if (auto iter = js.find("copy_file_threads"); js.end() != iter) {
+        int copy_file_threads = iter.value().get<int>();
+        m_copy_file_threadpool->SetBackgroundThreads(copy_file_threads);
+      }
     }
     ROCKSDB_JSON_OPT_PROP(js, timeout_multiplier);
     ROCKSDB_JSON_OPT_SIZE(js, estimate_speed);
