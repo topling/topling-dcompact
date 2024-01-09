@@ -1399,6 +1399,7 @@ Status DcompactEtcdExec::SubmitHttp(const fstring action,
       kv.append(iter.value().get_ref<const std::string&>());
       curl_slist_append(headers, kv.c_str());
     }
+    m_url.reserve(params.url.size() + 256);
     m_url.assign(params.url);
   } else {
     curl_easy_setopt(curl, CURLOPT_COOKIE, m_full_server_id.c_str());
