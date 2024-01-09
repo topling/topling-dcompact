@@ -511,6 +511,8 @@ class DcompactEtcdExecFactory final : public CompactExecFactoryCommon {
   unsigned m_weight_sum = 0;
   LoadBalanceType load_balance = LoadBalanceType::kRoundRobin;
   json dcompact_http_headers;
+  curl_slist* m_dcompact_headers = nullptr;
+  curl_slist* m_other_headers = nullptr;
   std::shared_ptr<ThreadPool> m_copy_file_threadpool;
 
 #ifdef TOPLING_DCOMPACT_USE_ETCD
@@ -552,6 +554,8 @@ class DcompactEtcdExecFactory final : public CompactExecFactoryCommon {
       m_start_time.shrink_to_fit();
       m_start_time_epoch = rawtime;
     }
+    m_dcompact_headers = nullptr;
+    m_other_headers = nullptr;
     CompactExecFactoryCommon::init(js, repo);
     ROCKSDB_JSON_OPT_PROP(js, oneshot_dbname_prefix);
     ROCKSDB_JSON_OPT_PROP(js, copy_sst_files);
@@ -604,6 +608,10 @@ class DcompactEtcdExecFactory final : public CompactExecFactoryCommon {
     if (http_workers.empty()) {
       THROW_InvalidArgument("http_workers must not be empty");
     }
+    m_dcompact_headers = curl_slist_append(nullptr, "Content-Type: application/json");
+    curl_slist_append(m_dcompact_headers, "Expect:");
+    m_other_headers = curl_slist_append(nullptr, "Content-Type: application/json");
+    curl_slist_append(m_other_headers, "Expect:");
     if (auto iter = js.find("dcompact_http_headers"); js.end() != iter) {
       dcompact_http_headers = iter.value();
       if (!dcompact_http_headers.is_object()) {
@@ -613,6 +621,11 @@ class DcompactEtcdExecFactory final : public CompactExecFactoryCommon {
       for (; dcompact_http_headers.end() != it; ++it) {
         if (!it.value().is_string())
           THROW_InvalidArgument("dcompact_http_headers[" + it.key() + "] is not a string");
+        std::string header;
+        header.append(it.key());
+        header.append(": ");
+        header.append(it.value().get_ref<const std::string&>());
+        curl_slist_append(m_dcompact_headers, header.c_str());
       }
     }
     int copy_file_threads = 10;
@@ -628,6 +641,8 @@ class DcompactEtcdExecFactory final : public CompactExecFactoryCommon {
 #ifdef TOPLING_DCOMPACT_USE_ETCD
     delete m_etcd;
 #endif
+    curl_slist_free_all(m_other_headers);
+    curl_slist_free_all(m_dcompact_headers);
   }
   size_t PickWorker() const {
     if (http_workers.size() == 1) {
@@ -1386,22 +1401,13 @@ Status DcompactEtcdExec::SubmitHttp(const fstring action,
   const auto& params = *f->http_workers[nth_http];
   CURL* curl = curl_easy_init();
   std::string result_buf;
-  auto headers = curl_slist_append(nullptr, "Content-Type: application/json");
-  TERARK_SCOPE_EXIT(curl_slist_free_all(headers));
-  curl_slist_append(headers, "Expect:");
+  curl_slist* headers;
   if (action == "/dcompact") {
-    std::string kv;
-    auto iter = f->dcompact_http_headers.begin();
-    for (; iter != f->dcompact_http_headers.end(); ++iter) {
-      kv.clear();
-      kv.append(iter.key());
-      kv.append(": ");
-      kv.append(iter.value().get_ref<const std::string&>());
-      curl_slist_append(headers, kv.c_str());
-    }
+    headers = f->m_dcompact_headers;
     m_url.reserve(params.url.size() + 256);
     m_url.assign(params.url);
   } else {
+    headers = f->m_other_headers;
     curl_easy_setopt(curl, CURLOPT_COOKIE, m_full_server_id.c_str());
     m_url.clear();
     m_url|params.base_url|action|"?labour="|m_labour_id;
