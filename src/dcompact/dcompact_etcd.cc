@@ -1711,14 +1711,14 @@ void DcompactEtcdExec::CleanFiles(const CompactionParams& params,
       if (!s.ok())
         DEBG("%s", s.ToString()), fail_num++;
     };
-    for (const std::string& file : m_copyed_files) {
-      ROCKSDB_VERIFY(f->copy_sst_files);
-      rm(file);
-    }
     rm(attempt_dir + "/compact.done");
     rm(attempt_dir + "/rpc.results");
     rmdir(attempt_dir);
     if (m_done) {
+      for (const std::string& file : m_copyed_files) {
+        ROCKSDB_VERIFY(f->copy_sst_files);
+        rm(file);
+      }
       rm(job_dir + "/rpc.params");
       for (auto& file : params.extra_serde_files) {
         rm(job_dir + "/" + file);
