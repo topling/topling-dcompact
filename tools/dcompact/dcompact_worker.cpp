@@ -97,7 +97,7 @@ do { \
             "verify(%s) failed: " fmt, \
             TERARK_PP_SmartForPrintf(#expr, ##__VA_ARGS__))); \
     job->results->status = Status::Corruption(errmsg); \
-    SerDeWrite(out, results); fclose(out); fclose(in); \
+    fclose(in); \
     info_log->Close(); \
     job->NotifyEtcd(); \
     const char* strNow = StrDateTimeNow(); \
@@ -951,7 +951,7 @@ void ShowCompactionParams(const CompactionParams& p, Version* const v,
   fprintf(fp, "</body>");
   fclose(fp);
 }
-int RunCompact(FILE* in, FILE* out) const {
+int RunCompact(FILE* in) const {
   const string worker_dir = GetWorkerNodePath(m_meta.output_root);
   const string output_dir = CatJobID(worker_dir, m_meta.job_id);
   const string attempt_dir = CatAttempt(output_dir, m_meta);
@@ -1290,6 +1290,7 @@ int RunCompact(FILE* in, FILE* out) const {
       results->status = Status(s2);
     }
   }
+  FILE* out = nullptr;
 auto writeObjResult = [&]{
   json js = JS_CompactionParamsEncodePtr(&params);
 #define SetResultSerDe2(obj, field1, field2) \
@@ -1343,6 +1344,11 @@ auto writeObjResult = [&]{
   auto t1 = pf.now();
   results->work_time_usec = pf.us(t0, t1);
   try {
+    string outFname = MakePath(attempt_dir, "rpc.results");
+    out = fopen(outFname.c_str(), "wb");
+    if (!out) {
+      return 0;
+    }
     SerDeWrite(out, results);
     writeObjResult();
   }
@@ -2134,7 +2140,6 @@ static void RunOneJob(const DcompactMeta& meta, mg_connection* conn) noexcept {
   }
   auto t2 = pf.now();
   string inFname = MakePath(output_dir, "rpc.params");
-  string outFname = MakePath(attempt_dir, "rpc.results");
   FILE* in = fopen(inFname.c_str(), "rb");
   auto t3 = pf.now();
   if (!in) {
@@ -2150,28 +2155,9 @@ static void RunOneJob(const DcompactMeta& meta, mg_connection* conn) noexcept {
             inFname, strerror(err), pf.mf(t2, t3), pf.mf(t0, t1), pf.mf(t1, t2));
     return;
   }
-  FILE* out = fopen(outFname.c_str(), "wb");
   auto t4 = pf.now();
-  if (!out) {
-    g_jobsWaiting.fetch_sub(n_subcompacts, std::memory_order_relaxed);
-    g_jobsPreFailed.fetch_add(1, std::memory_order_relaxed);
-    g_jobsAccepting.fetch_sub(1, std::memory_order_relaxed);
-    int err = errno;
-    fclose(in);
-    auto t5 = pf.now();
-    if (NFS_DYNAMIC_MOUNT && ESTALE == err) {
-      mount_nfs(meta, conn, info_log); // treat fail even success
-    }
-    auto t6 = pf.now();
-    HttpErr(412, "fopen(%s, wb) = %s, %.3f ms\n\t"
-                 "fopen(%s, rb) = %.3f ms, fclose %.3f ms, prepare %.3f ms, mount %.3f ms, mount(%s) %.3f ms",
-                 outFname, strerror(err),  pf.mf(t3,t4),
-                 inFname, pf.mf(t2,t3), pf.mf(t4,t5), pf.mf(t0,t1), pf.mf(t1,t2),
-                 NFS_DYNAMIC_MOUNT && ESTALE == err ? "stale" : "skip", pf.mf(t5,t6));
-    return;
-  }
-  INFO("accept %s: n_subcompacts %d, prepare %.3f ms, fopen(rpc.params) %.3f ms, fopen(rpc.results) %.3f ms",
-       attempt_dir, n_subcompacts, pf.mf(t0, t1), pf.mf(t2, t3), pf.mf(t3, t4));
+  INFO("accept %s: n_subcompacts %d, prepare %.3f ms, fopen(rpc.params) %.3f ms",
+       attempt_dir, n_subcompacts, pf.mf(t0, t1), pf.mf(t2, t3));
   g_acceptedJobs.add(j.get());
   g_jobsAccepting.fetch_sub(1, std::memory_order_relaxed);
   j->accept_time = j->env->NowMicros();
@@ -2192,8 +2178,8 @@ static void RunOneJob(const DcompactMeta& meta, mg_connection* conn) noexcept {
       results->mount_time_usec = pf.us(t1, t2);
       results->prepare_time_usec = pf.us(t2, t4);
       results->waiting_time_usec = pf.us(t4, t5);
-      // {in,out} are closed in RunCompact
-      j->RunCompact(in, out);
+      // {in} is closed in RunCompact
+      j->RunCompact(in);
       //INFO("after j->RunCompact()");
     };
     if (MULTI_PROCESS) {
@@ -2216,11 +2202,9 @@ static void RunOneJob(const DcompactMeta& meta, mg_connection* conn) noexcept {
       else if (pid < 0) {
         ERROR("%s: fork() = %m", attempt_dir);
         fclose(in);
-        fclose(out);
       }
       else { // parent process
         fclose(in);
-        fclose(out);
         j->child_pid = pid;
         DEBG("%s: fork to parent time = %f sec", attempt_dir, pf.sf(t5, t6));
         int status = 0;
