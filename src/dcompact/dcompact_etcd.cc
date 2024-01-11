@@ -1229,7 +1229,15 @@ try
       const size_t fsize_full = lcast(LineBuf(compact_done_fp));
       FileStream fp(output_dir + "/rpc.results", "rb");
       for (int retry = 0; retry < 10; retry++) {
-        const size_t fsize_view = fp.fsize();
+        size_t fsize_view = fp.fsize();
+        if (fsize_view == fsize_full)
+          break;
+        // file inode meta data maybe not updated since it is net fs,
+        // get file size by read to eof
+        char buf[4096];
+        while (fp.read(buf, sizeof(buf)) > 0) {}
+        fsize_view = fp.tell();
+        fp.rewind();
         if (fsize_view == fsize_full)
           break;
         INFO("fsize(%s/rpc.results): view = %zd, full = %zd",
