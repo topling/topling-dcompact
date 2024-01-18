@@ -1350,7 +1350,7 @@ auto writeObjResult = [&]{
   imm_dbo.statistics->GetAggregated(results->statistics.tickers,
                                     results->statistics.histograms);
   auto t1 = pf.now();
-  ROCKS_LOG_DEBUG(info_log, "Writing rpc.result");
+  ROCKS_LOG_DEBUG(info_log, "Writing rpc.results");
   results->work_time_usec = pf.us(t0, t1);
   try {
     string outFname = MakePath(attempt_dir, "rpc.results");
