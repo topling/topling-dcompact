@@ -516,13 +516,14 @@ static string_appender<> BuildMetaKey(const DcompactMeta& meta) {
 
 class Job;
 class AcceptedJobsMap {
-  hash_strmap<Job*> map;
+  hash_strmap<Job*, fstring_func::hash_align, fstring_func::equal_align,
+              ValueInline, FastCopy, unsigned, size_t, true> map;
   mutable std::mutex mtx;
 public:
-  hash_strmap<Job*>& get_map() { return map; }
+  auto& get_map() { return map; }
   std::mutex& get_mtx() { return mtx; }
   AcceptedJobsMap() { map.enable_freelist(4096); }
-  std::pair<size_t, bool> add(Job*) noexcept;
+  void add(Job*) noexcept;
   intrusive_ptr<Job> find(const DcompactMeta& key) const noexcept;
   void del(Job*) noexcept;
   size_t peekSize() const noexcept { return map.size(); }
@@ -2315,13 +2316,12 @@ double QueueItem::score(long long now) const {
   return score;
 }
 
-std::pair<size_t, bool>
-AcceptedJobsMap::add(Job* j) noexcept {
+void AcceptedJobsMap::add(Job* j) noexcept {
   const auto key = BuildMetaKey(j->m_meta);
   mtx.lock();
   auto ib = map.insert_i(key, j);
+  TERARK_VERIFY_S(ib.second, "key = %s", key);
   mtx.unlock();
-  return ib;
 }
 
 intrusive_ptr<Job>
