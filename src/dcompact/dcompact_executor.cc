@@ -919,7 +919,7 @@ void JS_ToplingDcompact_AddVersion(json& djs, bool html) {
       return terark::fstring(&*pos, s.end() - pos);
     };
     auto git_sha_end = std::find_if(git_sha_beg.begin(), git_sha_beg.end(), &isspace);
-    terark::string_appender<> oss_rocks;
+    terark::string_appender<> oss_rocks(terark::valvec_reserve(), 512);
     oss_rocks|"<pre>"
              |"<a href='https://github.com/topling/topling-dcompact/commit/"
              |headstr(git_sha_beg, git_sha_end)|"'>"
