@@ -1296,8 +1296,8 @@ try
     auto tt = m_env->NowMicros();
     Slice msg1 = "DcompactEtcdExec::Attempt";
     std::string msg2 = ExceptionFormatString(
-          "job-%05d/att-%02d: at %s estimate timeout %.6f sec, "
-          "real %.6f (submit %.6f s wait %.6f ms), input %s, send shutdown",
+          "job-%05d/att-%02d: at %s estimate timeout %.3f sec, "
+          "real %.3f (submit %.3f ms wait %.3f s), input %s, send shutdown",
           params.job_id, m_attempt, m_url.c_str(), timeout_us/1e6,
           (tt-t2)/1e6, (t4-t3)/1e3, (t5-t4)/1e6,
           SizeToString(input_raw_bytes()).c_str());
