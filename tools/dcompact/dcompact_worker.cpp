@@ -325,6 +325,7 @@ static const bool NFS_DYNAMIC_MOUNT = getEnvBool("NFS_DYNAMIC_MOUNT", false);
 static const long MAX_PARALLEL_COMPACTIONS = getEnvLong("MAX_PARALLEL_COMPACTIONS", 0);
 static const long MAX_WAITING_COMPACTIONS = getEnvLong("MAX_WAITING_COMPACTIONS",
                                      std::thread::hardware_concurrency()*2);
+static const uint64_t MAX_TARGET_FILE_SIZE = ParseSizeXiB(getenv("MAX_TARGET_FILE_SIZE") ?: "8g");
 static const string TERMINATION_CHECK_URL = getEnvStr("TERMINATION_CHECK_URL", "");
 static const string WORKER_DB_ROOT = GetDirFromEnv("WORKER_DB_ROOT", "/tmp"); // NOLINT
 static const string NFS_MOUNT_ROOT = GetDirFromEnv("NFS_MOUNT_ROOT", "/mnt/nfs");
@@ -1199,6 +1200,7 @@ int RunCompact(FILE* in) const {
   }
   ROCKS_LOG_DEBUG(info_log, "Construct Compaction object");
   std::string trim_ts = "";
+  minimize(params.target_file_size, MAX_TARGET_FILE_SIZE);
   Compaction compaction(storage_info,
       *cfd->ioptions(), *cfd->GetLatestMutableCFOptions(), mut_dbo, inputs,
       params.output_level, params.target_file_size, params.max_compaction_bytes,
