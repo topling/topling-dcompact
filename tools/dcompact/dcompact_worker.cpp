@@ -1097,6 +1097,8 @@ int RunCompact(FILE* in) const {
   shared_ptr<Cache> table_cache = NewLRUCache(mut_dbo.max_open_files);
   BlockCacheTracer* block_cache_tracer = nullptr;
   const std::shared_ptr<IOTracer> io_tracer(nullptr);
+  DBImpl* null_db = nullptr;
+  ErrorHandler error_handler(null_db, imm_dbo, &mutex);
   unique_ptr<VersionSet> versions(
       new VersionSet(attempt_dbname, &imm_dbo, env_options, table_cache.get(),
                      &write_buffer_manager, &write_controller,
@@ -1104,7 +1106,12 @@ int RunCompact(FILE* in) const {
                   #if (ROCKSDB_MAJOR * 10000 + ROCKSDB_MINOR * 10 + ROCKSDB_PATCH) >= 70060
                      params.db_id,
                   #endif
-                     params.db_session_id));
+                     params.db_session_id
+                  #if (ROCKSDB_MAJOR * 10000 + ROCKSDB_MINOR * 10 + ROCKSDB_PATCH) >= 80100
+                      , mut_dbo.daily_offpeak_time_utc
+                      , &error_handler
+                  #endif
+                     ));
   params.version_set.To(versions.get());
 
   uint64_t log_number = 0;
@@ -1221,8 +1228,6 @@ int RunCompact(FILE* in) const {
   compaction.SetInputVersion(cfd->current());
 //----------------------------------------------------------------------------
   LogBuffer log_buffer(imm_dbo.info_log_level, imm_dbo.info_log.get());
-  DBImpl* null_db = nullptr;
-  ErrorHandler error_handler(null_db, imm_dbo, &mutex);
   EventLogger event_logger(imm_dbo.info_log.get());
   SnapshotChecker* snapshot_checker = nullptr;
   FSDirectory* db_directory = nullptr;
