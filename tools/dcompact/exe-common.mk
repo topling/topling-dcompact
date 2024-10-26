@@ -9,7 +9,14 @@ else
 $(error "Fatal: not found topling-zip or topling-core")
 endif
 BOOST_INC ?= -I${TERARK_HOME}/boost-include
+MARCH ?= $(shell uname -m)
+ifeq "${MARCH}" "x86_64"
 WITH_BMI2 ?= $(shell ${TERARK_HOME}/cpu_has_bmi2.sh)
+else
+# not available
+WITH_BMI2 ?= na
+endif
+
 CURRENT_MAKEFILE := $(lastword $(MAKEFILE_LIST))
 
 ifeq "$(origin CXX)" "default"
@@ -68,7 +75,9 @@ ifeq "$(shell a=${COMPILER};echo $${a:0:3})" "g++"
     CXXFLAGS += -Wa,-q
   endif
   CXXFLAGS += -time
-  CXXFLAGS += -mcx16
+  ifeq "${MARCH}" "x86_64"
+    CXXFLAGS += -mcx16
+  endif
 #  CXXFLAGS += -fmax-errors=5
   #CXXFLAGS += -fmax-errors=2
 endif
@@ -78,7 +87,9 @@ ifeq "$(shell a=${COMPILER};echo $${a:0:2})" "ic"
   CXXFLAGS += -xHost -fasm-blocks
   CPU ?= -xHost
 else
-  CPU ?= -march=haswell
+  ifeq "${MARCH}" "x86_64"
+    CPU ?= -march=haswell
+  endif
   COMMON_C_FLAGS  += -Wno-deprecated-declarations
   ifeq "$(shell a=${COMPILER};echo $${a:0:5})" "clang"
     COMMON_C_FLAGS  += -fstrict-aliasing
@@ -89,7 +100,7 @@ endif
 
 ifeq (${WITH_BMI2},1)
   CPU += -mbmi -mbmi2
-else
+else ifeq (${WITH_BMI2},0)
   CPU += -mno-bmi -mno-bmi2
 endif
 
