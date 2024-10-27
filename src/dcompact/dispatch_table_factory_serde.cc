@@ -1,6 +1,11 @@
 //
 // Created by leipeng on 2021-01-27.
 //
+#if defined(_MSC_VER)
+//#error: _CRT_NONSTDC_NO_DEPRECATE must be defined to use posix functions on Visual C++
+#define _CRT_NONSTDC_NO_DEPRECATE
+#define TERARK_DATA_IO_SLOW_VAR_INT
+#endif
 #include <topling/internal_dispather_table.h>
 #include <terark/io/DataIO.hpp>
 #include <terark/io/FileStream.hpp>
@@ -50,7 +55,7 @@ public:
   void HosterSide_Serialize(DioWriter& dio) const {
     auto ptr2name = GetPtrToNameMap();
     //dio << m_json_str; // has been set by cons
-    dio.write_var_uint64(ptr2name.size());
+    dio << terark::var_size_t(ptr2name.size());
     for (auto& kv : ptr2name) {
       const TableFactory* tf = kv.first;
       const std::string& name = kv.second;
@@ -63,7 +68,7 @@ public:
     }
   }
   void WorkerSide_DeSerialize(DioReader& dio) {
-    size_t num = dio.read_var_uint64();
+    size_t num = dio.load_as<terark::var_size_t>();
     SidePluginRepo repo;
     for (size_t i = 0; i < num; ++i) {
       std::string name, clazz, cons_jstr;
@@ -84,7 +89,7 @@ public:
   }
   void WorkerSide_SerializeSub(DioWriter& dio) const {
     auto ptr2name = GetPtrToNameMap();
-    dio.write_var_uint64(ptr2name.size());
+    dio << terark::var_size_t(ptr2name.size());
     for (auto& kv : ptr2name) {
       const TableFactory* tf = kv.first;
       const std::string& name = kv.second;
@@ -98,7 +103,7 @@ public:
     for (level = 0; level < num_levels; ++level) {
       if (m_stats[0][level].st.entry_cnt) {
         dio.writeByte(1);
-        dio.write_var_uint64(level);
+        dio << terark::var_size_t(level);
         dio << m_stats[0][level].st;
         dio << m_writer_files[level];
         WorkerSide_SerializeSub(dio);
@@ -112,7 +117,7 @@ public:
     if (hasData) {
       Stat st;
       size_t writer_files = 0;
-      size_t level = (size_t)dio.read_var_uint64();
+      size_t level = (size_t)dio.load_as<terark::var_size_t>();
       dio >> st;
       dio >> writer_files;
       HosterSide_DeSerializeSub(dio);
@@ -123,7 +128,7 @@ public:
     }
   }
   void HosterSide_DeSerializeSub(DioReader& dio) {
-    size_t num = dio.read_var_uint64();
+    size_t num = dio.load_as<terark::var_size_t>();
     for (size_t i = 0; i < num; ++i) {
       std::string name;
       dio >> name;

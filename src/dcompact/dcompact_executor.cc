@@ -2,6 +2,13 @@
 // Created by leipeng on 2021/1/19.
 //
 
+#if defined(_MSC_VER)
+//#error: _CRT_NONSTDC_NO_DEPRECATE must be defined to use posix functions on Visual C++
+#define _CRT_NONSTDC_NO_DEPRECATE
+#define TERARK_DATA_IO_SLOW_VAR_INT
+#include <filesystem>
+#include <winsock.h> // for gethostname
+#endif
 #include "dcompact_executor.h"
 #include <logging/logging.h>
 #include <rocksdb/merge_operator.h>
@@ -48,12 +55,12 @@ using terark::ExplicitSerDePointer;
 
 template<class DataIO>
 void DataIO_saveObject(DataIO& dio, const Slice& x) {
-  dio << terark::var_size_t(x.size_);
+  dio << typename DataIO::my_var_size_t(x.size_);
   dio.ensureWrite(x.data_, x.size_);
 }
 template<class DataIO>
 void DataIO_loadObject(DataIO& dio, InternalKey& x) {
-  size_t len = dio.read_var_uint32();
+  size_t len = dio.template load_as<typename DataIO::my_var_size_t>();
   auto* rep = x.rep();
   rep->resize(len);
   dio.ensureRead(rep->data(), len);
@@ -132,7 +139,7 @@ void FileMetaDataVec_load(DataIO& dio, std::vector<FileMetaData*>& vec) {
 template<class DataIO>
 void FileMetaDataVec_save(DataIO& dio, const std::vector<FileMetaData*>& vec) {
   size_t num = vec.size();
-  dio << terark::var_size_t(num);
+  dio << typename DataIO::my_var_size_t(num);
   for (FileMetaData* p : vec) {
     dio << *p;
   }
@@ -364,7 +371,7 @@ void SerDeRead(FILE* fp, CompactionParams* p) {
   //TERARK_VERIFY_EQ(p->rocksdb_src_version, ROCKSDB_VERSION);
   //TERARK_VERIFY_S_EQ(p->rocksdb_src_githash, rocksdb_build_git_sha);
   struct ll_stat st;
-  TERARK_VERIFY_F(ll_fstat(fileno(fp), &st) == 0, "%m");
+  TERARK_VERIFY_F(ll_fstat(fileno(fp), &st) == 0, "%s", strerror(errno));
   if (S_ISREG(st.st_mode))
     TERARK_VERIFY_EQ(dio.tell(), stream_position_t(st.st_size));
 }
@@ -657,12 +664,12 @@ void CompactExecCommon::NotifyResults(FILE* results, const CompactionParams& par
   NotifyPlugin1(mut_cfo, prefix_extractor);
   NotifyPlugin1(imm_cfo, sst_partitioner_factory);
 //NotifyPlugin1(imm_cfo, html_user_key_coder); // not needed
-  auto n_listeners = (size_t)dio.read_var_uint64();
+  auto n_listeners = (size_t)dio.load_as<terark::var_size_t>();
   TERARK_VERIFY_EQ(n_listeners, imm_cfo.listeners.size());
   for (size_t i = 0; i < n_listeners; i++) {
     NotifyPlugin1(imm_cfo, listeners[i]);
   }
-  auto n_tbl_prop_coll = (size_t)dio.read_var_uint64();
+  auto n_tbl_prop_coll = (size_t)dio.load_as<terark::var_size_t>();
   TERARK_VERIFY_EQ(n_tbl_prop_coll,
                    imm_cfo.table_properties_collector_factories.size());
   for (size_t i = 0; i < n_tbl_prop_coll; i++) {
@@ -745,10 +752,14 @@ bool CompactExecFactoryCommon::ShouldRunLocal(const Compaction* c) const {
     // use base name of cfpath as dbname, so --
     // if using this feature, dbname should be same as basename(cf_path.back())
     const std::string& cfpath = c->immutable_options()->cf_paths.back().path;
+   #if defined(_MSC_VER)
+    auto dbname = std::filesystem::path(cfpath).filename().string();
+   #else
     auto dbname = (const char*)memrchr(cfpath.data(), '/', cfpath.size());
     dbname = dbname ? dbname + 1 : cfpath.data();
+   #endif
     const std::string colon_cfname = ":" + cfname;
-    const std::string dbcf = terark::fstring(dbname) + colon_cfname;
+    const std::string dbcf = dbname + colon_cfname;
     size_t idx = m_dbcf_min_level.find_i(dbcf); // try dbname:cfname
     if (m_dbcf_min_level.end_i() == idx) { // not found dbname:cfname
       idx = m_dbcf_min_level.find_i(dbname); // try dbname

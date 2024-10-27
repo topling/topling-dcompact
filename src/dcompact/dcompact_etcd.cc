@@ -11,7 +11,12 @@
 #include <terark/util/atomic.hpp>
 #include <terark/util/function.hpp>
 #include <terark/util/linebuf.hpp>
+#if defined(_MSC_VER)
+#include <time.h>
+#define localtime_r(time, tm_struct) (localtime_s(tm_struct, time), tm_struct)
+#else
 #include <terark/util/process.hpp>
+#endif
 #include <terark/util/refcount.hpp>
 #include <terark/lcast.hpp>
 #include <terark/valvec.hpp>
@@ -56,10 +61,14 @@ extern const char* rocksdb_build_git_sha;
 namespace ROCKSDB_NAMESPACE {
 
 using namespace terark;
+using namespace terark::terark_placeholders;
+static std::string basename(const std::string& p) {
+  return std::filesystem::path(p).filename().string();
+}
 
 #define ToStr(...) std::string(buf, snprintf(buf, sizeof(buf), __VA_ARGS__))
 #define AddFmt(str,...) str.append(buf,snprintf(buf,sizeof(buf),__VA_ARGS__))
-#define CatFmt(str,...) (str + terark::fstring(buf,snprintf(buf,sizeof(buf),__VA_ARGS__)))
+#define CatFmt(str,...) (fstring(str) + fstring(buf,snprintf(buf,sizeof(buf),__VA_ARGS__)))
 
 #ifdef TOPLING_DCOMPACT_USE_ETCD
 struct EtcdConnectionParams {
@@ -810,6 +819,7 @@ void DcompactEtcdExec::AlertDcompactFail(const Status& s) {
   bjs["labour_id"] = m_labour_id;
   bjs["meta"] = meta.ToJsonObj();
   std::string body = bjs.dump();
+#if !defined(_MSC_VER)
   if (!f->alert_email.empty()) {
     std::string cmd = "mail -s '" + title + "' " + f->alert_email;
     std::string res = vfork_cmd(cmd, body).get();
@@ -817,6 +827,7 @@ void DcompactEtcdExec::AlertDcompactFail(const Status& s) {
       INFO("cmd %s output %s", cmd, res);
     }
   }
+#endif
   if (!f->alert_http.empty()) {
     PostHttp(f->alert_http, body);
   }
@@ -849,7 +860,7 @@ Status DcompactEtcdExec::MaybeCopyFiles(const CompactionParams& params) {
     TERARK_VERIFY_S(!Slice(cf_path.path).starts_with(f->hoster_root),
                     "%s : %s", cf_path.path, f->hoster_root);
   const std::string& dbpath = params.dbname;
-  const char* dbname = basename(dbpath.c_str());
+  const auto dbname = basename(dbpath);
   std::string dir = f->hoster_root + "/" + dbname;
   auto t0 = m_env->NowMicros();
   m_env->CreateDirIfMissing(dir);
@@ -1000,9 +1011,9 @@ try
       file->job_attempt = m_attempt;
     }
   }
-  char buf[64];
+  char buf[4096]; // also used later
   const std::string& dbpath = params.dbname;
-  std::string dbname = basename(dbpath.c_str()); // now for simpliciy
+  std::string dbname = basename(dbpath); // now for simpliciy
   std::string dbcf_name = dbname + "/" + params.cf_name;
   string_appender<> key;
   key.reserve(256);
@@ -1234,7 +1245,6 @@ try
           break;
         // file inode meta data maybe not updated since it is net fs,
         // get file size by read to eof
-        char buf[4096];
         while (fp.read(buf, sizeof(buf)) > 0) {}
         fsize_view = fp.tell();
         fp.rewind();
@@ -1599,7 +1609,7 @@ void DcompactEtcdExec::ReportFee(const CompactionParams& params,
 #endif
 
   const std::string& dbpath = params.dbname;
-  std::string dbname = basename(dbpath.c_str()); // now for simpliciy
+  const auto dbname = basename(dbpath); // now for simpliciy
   fee.provider = conf->provider;
   fee.dbId = dbname;
   fee.attempt = m_attempt;
@@ -1697,7 +1707,8 @@ void DcompactEtcdExec::CleanFiles(const CompactionParams& params,
     }
   }
   const std::string& dbpath = params.dbname;
-  fstring dbname = basename(dbpath.c_str()); // now for simpliciy
+  const auto dbname0 = basename(dbpath); // now for simpliciy
+  const fstring dbname = dbname0;
   auto t0 = m_env->NowMicros();
   char buf[64];
   const std::string& base_dir = params.cf_paths.back().path;
@@ -1878,7 +1889,7 @@ function setIframeHeight(iframe) {
     }));
   }
   std::sort(uniq.begin(), uniq.end(), TERARK_CMP_P(url, <));
-  uniq.trim(std::unique(uniq.begin(), uniq.end(), TERARK_GET(->url)==cmp));
+  uniq.trim(std::unique(uniq.begin(), uniq.end(), TERARK_GET(->url)==_cmp));
   int idx = 0;
   int num = (int)uniq.size();
   int non_empty = 0;
@@ -1919,9 +1930,9 @@ worker->m_running_mtx.unlock();
     for (auto& wl : labours) {
       dbcf_name.clear();
       dbcf_name|wl.dbname|'/'|wl.cfname;
-      auto idx = m_stat_map.find_i(dbcf_name);
-      if (idx < m_stat_map.end_i()) {
-        static_cast<DcompactStatItem&>(wl) = m_stat_map.val(idx);
+      auto idx2 = m_stat_map.find_i(dbcf_name);
+      if (idx2 < m_stat_map.end_i()) {
+        static_cast<DcompactStatItem&>(wl) = m_stat_map.val(idx2);
       }
     }
     m_stat_map.m_mtx.unlock();
