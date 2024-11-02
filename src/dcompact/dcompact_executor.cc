@@ -605,9 +605,9 @@ Status CompactExecCommon::CopyOneFile(const std::string& src,
       close(dstFd);
       close(srcFd);
       terark::AutoFree<char> msg1;
-      asprintf(&msg1.p, "sendfile(dst %s, src %s, off %zd, %zd)",
+      int len = asprintf(&msg1.p, "sendfile(dst %s, src %s, off %zd, %zd)",
                dst.c_str(), src.c_str(), offset, req);
-      return Status::IOError(msg1.p, err);
+      return Status::IOError(Slice(msg1.p, len), err);
     }
     offset += len;
   }
