@@ -281,7 +281,7 @@ void CreatePluginTpl(FILE* fp, const ObjectRpcParam& rpc,
       spec = json::parse(rpc.params);
     }
     catch (const std::exception& ex) {
-      ERROR("%s: exception: %s", ROCKSDB_FUNC, ex);
+      ERROR("%s: exception: %s, json:---%s\n---", ROCKSDB_FUNC, ex, rpc.params);
       THROW_Corruption(ex.what());
     }
 #else
