@@ -2351,14 +2351,12 @@ void AcceptedJobsMap::del(Job* j) noexcept {
   mtx.unlock();
 }
 
-__attribute__((weak)) void AutoStartZipServer();
+void AutoStartZipServer();
 
 } // namespace ROCKSDB_NAMESPACE
 
 int main(int argc, char* argv[]) {
   unsetenv("LD_PRELOAD");
-  if (ROCKSDB_NAMESPACE::AutoStartZipServer) {
-    ROCKSDB_NAMESPACE::AutoStartZipServer();
-  }
+  ROCKSDB_NAMESPACE::AutoStartZipServer();
   return ROCKSDB_NAMESPACE::Job::main(argc, argv);
 }
