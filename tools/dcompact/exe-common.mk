@@ -36,7 +36,7 @@ endif
 INCS := -I${TERARK_HOME}/src ${INCS} ${BOOST_INC}
 INCS += -I${ROCKSDB_HOME} -I${ROCKSDB_HOME}/include
 INCS += -I../../src
-INCS += -I../../../rockside/src
+INCS += -I${ROCKSDB_HOME}/sideplugin/rockside/src
 
 #CXXFLAGS += -pipe
 CXXFLAGS += -g3
