@@ -47,18 +47,20 @@ Distributed Compaction is configured in the json configuration file:
 
 Here, `CompactionExecutorFactory` is a C++ interface, which is a namespace in json. In this namespace, an object whose varname is `dcompact` and class name is `DcompactEtcd` (implements the `CompactionExecutorFactory` interface) is defined, and the object is constructed with `params`. The params are explained as follows:
 
-property name | default value | description
--------|------|---
-`allow_fallback_to_local`| false | Whether to allow fallback to local compact if Distributed Compaction fails
-`hoster_root` | null | The root directory of the db, generally set the same as the `path` variable in DB::Open.
-`instance_name` | null | The db instance name, in a multi-tenant scenario, the CompactWorker node uses instance\_name to distinguish different db instances
-`nfs_mnt_src`   | null | NFS mount source
-`nfs_mnt_opt`   | null | NFS mount options
-`http_max_retry` | 3 | Maximum number of retries
-`overall_timeout` | 5 | In seconds, the time-out time for a single execution attempt of a single Distributed Compaction task from start to finish
-`http_timeout` | 3 | In seconds, the timeout time of the http connection. Under normal circumstances, timeout means an error
-`http_workers` | null | Multiple (at least one) http urls. Those starting with `//` will be skipped, equivalent to being commented out<br/>`//end_http_workers` at the end is for the `start_workers.sh` script and cannot be deleted
-`dcompact_min_level` | 2 | Distributed Compaction is used only when the Compact Output Level is greater than or equal to this value, and local compact is used when it is smaller than this value
+property name | type |default value | description
+--------------|------|--------------|-------------------
+`allow_fallback_to_local`| bool |false | Whether to allow fallback to local compact if Distributed Compaction fails
+`hoster_root`     | string | empty | The root directory of the db, generally set the same as the `path` variable in DB::Open.
+`instance_name`   | string | empty | The db instance name, in a multi-tenant scenario, the CompactWorker node uses instance\_name to distinguish different db instances
+`job_url_root`    | string | empty | 查看分布式 Compact Job 详细信息的 http url, 一般可以与 http_workers 中的 web_url 相同
+`nfs_mnt_src`     | string | empty | NFS mount source
+`nfs_mnt_opt`     | string | empty | NFS mount options
+`http_max_retry`  |  int   | 3 | Maximum number of retries
+`retry_sleep_time`|  int   | 1 | In seconds, sleep time between retry, to avoid flood the server
+`overall_timeout` |  int   | 5 | In seconds, the time-out time for a single execution attempt of a single Distributed Compaction task from start to finish
+`http_timeout`    |  int   | 3 | In seconds, the timeout time of the http connection. Under normal circumstances, timeout means an error
+`http_workers`    | array  | empty | Multiple (at least one) http urls. Those starting with `//` will be skipped, equivalent to being commented out<br/>`//end_http_workers` at the end is for the `start_workers.sh` script and cannot be deleted
+`dcompact_min_level` | int | 2 | Distributed Compaction is used only when the Compact Output Level is greater than or equal to this value, and local compact is used when it is smaller than this value
 
 ### 1.1 http_workers
 
@@ -66,11 +68,11 @@ In the intranet environment, each worker can be simply configured as a string re
 
 In a public network (such as cloud computing) environment, workers are hidden behind reverse proxy or load balancing, and several configuration fields are added for this:
 
-field name | description
-------|------
-url | Submit a compact job
-base_url | probe to query compact job or shutdown to specify compact job
-web_url | View the status through stat and view the log file in the browser
+field name |  type  |description
+-----------|--------|-----------
+url        | string | Submit a compact job
+base_url   | string | probe to query compact job or shutdown to specify compact job
+web_url    | string | View the status through stat and view the log file in the browser
 
 ## 2. dcompact worker
 

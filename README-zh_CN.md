@@ -58,6 +58,7 @@ allow_fallback_to_local| bool |false | 如果分布式 Compact 失败，是否�
 copy_sst_files     | bool   | false | 不可通过 http 在线修改，此时 hoster_root 不能为 db 数据目录的前缀
 hoster_root        | string | 空 | 该 db 的根目录，一般设置为与 DB::Open 中的 `path` 变量相同。
 instance_name      | string | 空 | 该 db 实例名，在多租户场景下，CompactWorker 结点使用 instance\_name 区分不同的 db 实例
+job_url_root       | string | 空 | 查看分布式 Compact Job 详细信息的 http url, 一般可以与 http_workers 中的 web_url 相同
 nfs_type           | string | 空 | NFS 类型，空表示 `nfs`, 也可以是 `glusterfs`, `smbfs` 等等
 nfs_mnt_src        | string | 空 | NFS 挂载源
 nfs_mnt_opt        | string | 空 | NFS 挂载选项
