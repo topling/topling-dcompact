@@ -994,9 +994,8 @@ T lim(T x, U lo, W hi) {
 }
 Status DcompactEtcdExec::Attempt(const CompactionParams& params,
                                  CompactionResults* results)
-#ifdef NDEBUG
-try
-#endif
+{
+TOPLINGDB_TRY
 {
   using namespace std::chrono;
   auto f = static_cast<const DcompactEtcdExecFactory*>(m_factory);
@@ -1063,20 +1062,16 @@ try
     auto s1 = m_env->CreateDir(output_dir);
     TERARK_VERIFY_S(s1.ok(), "%s", s1.ToString());
     std::string params_fname = output_dir + "/rpc.params";
-#ifdef NDEBUG
-  try {
-#endif
+  TOPLINGDB_TRY {
     FileStream fp(params_fname, "wb+");
     SerDeWrite(fp, &params);
-#ifdef NDEBUG
-  } catch (const std::exception& ex) {
+  } TOPLINGDB_CATCH (const std::exception& ex) {
     TERARK_DIE_S("file = %s, exception: %s", params_fname, ex);
-  } catch (const Status& s) {
+  } TOPLINGDB_CATCH (const Status& s) {
     TERARK_DIE_S("file = %s, Status: %s", params_fname, s.ToString());
-  } catch (...) {
+  } TOPLINGDB_CATCH (...) {
     TERARK_DIE_S("file = %s, exception: unknown", params_fname);
   }
-#endif
   }
   auto t1 = m_env->NowMicros();
   auto s1 = m_env->CreateDir(AddFmt(output_dir, "/att-%02d", m_attempt));
@@ -1329,24 +1324,23 @@ try
 //watcher.Cancel(); // watch will be canceled in destructor
   return s;
 }
-#ifdef NDEBUG
-catch (const std::exception& ex) {
+TOPLINGDB_CATCH (const std::exception& ex) {
   ROCKS_LOG_ERROR(m_log, "job-%05d/att-%02d at %s, exception: %s",
     params.job_id, m_attempt, m_url.c_str(), ex.what());
   CleanFiles(params, *results);
   return Status::Corruption("DcompactEtcdExec::Attempt", ex.what());
 }
-catch (const Status& s) {
+TOPLINGDB_CATCH (const Status& s) {
   ROCKS_LOG_ERROR(m_log, "job-%05d/att-%02d at %s, caught Status: %s",
     params.job_id, m_attempt, m_url.c_str(), s.ToString().c_str());
   CleanFiles(params, *results);
   return Status::Corruption("DcompactEtcdExec::Attempt", s.ToString());
 }
-catch (...) {
+TOPLINGDB_CATCH (...) {
   CleanFiles(params, *results);
   return Status::Corruption("DcompactEtcdExec::Attempt", "caught unknown exception");
 }
-#endif
+}
 
 auto g_curl_init = curl_global_init(CURL_GLOBAL_DEFAULT); // NOLINT
 

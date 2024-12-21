@@ -275,18 +275,14 @@ void CreatePluginTpl(FILE* fp, const ObjectRpcParam& rpc,
   }
   json spec;
   if (!rpc.params.empty()) {
-#if defined(NDEBUG)
     Logger* info_log = params.info_log;
-    try {
+    TOPLINGDB_TRY {
       spec = json::parse(rpc.params);
     }
-    catch (const std::exception& ex) {
+    TOPLINGDB_CATCH (const std::exception& ex) {
       ERROR("%s: exception: %s, json:---%s\n---", ROCKSDB_FUNC, ex, rpc.params);
       THROW_Corruption(ex.what());
     }
-#else
-    spec = json::parse(rpc.params);
-#endif
   }
   ptr = PluginFactory<Ptr>::AcquirePlugin(rpc.clazz, spec, repo);
   TERARK_VERIFY(GetRawPtr(ptr) != nullptr);
@@ -1011,25 +1007,21 @@ int RunCompact(FILE* in) const {
     MyCreatePlugin1(cfo, table_properties_collector_factories[i]);
   }
   DEBG("Beg SerDeRead: %s", attempt_dir);
-#if defined(NDEBUG)
-  try {
+  TOPLINGDB_TRY {
     SerDeRead(in, &params);
   }
-  catch (const std::exception& ex) {
+  TOPLINGDB_CATCH (const std::exception& ex) {
     ERROR("SerDeRead = %s", ex.what());
     return 0;
   }
-  catch (const Status& es) {
+  TOPLINGDB_CATCH (const Status& es) {
     ERROR("SerDeRead = %s", es.ToString());
     return 0;
   }
-  catch (...) {
+  TOPLINGDB_CATCH (...) {
     ERROR("SerDeRead = unknown exception");
     return 0;
   }
-#else
-  SerDeRead(in, &params);
-#endif
   DEBG("End SerDeRead: %s", attempt_dir);
   if (!params.full_history_ts_low.empty()) {
     VERIFY_EQ(cfo.comparator->timestamp_size(),
@@ -2027,9 +2019,7 @@ void NotifyEtcd() const {
   g_etcd->set(key, "done", ttl).then([=](pplx::task<etcd::Response> async) {
     TERARK_VERIFY_EQ(self.get(), this); // must use self
     TERARK_VERIFY_EQ(info_log, this->m_log.get());
-#ifdef NDEBUG
-try {
-#endif
+TOPLINGDB_TRY {
   etcd::Response resp = async.get();
   if (!resp.is_ok()) {
     g_etcd_err.fetch_add(1, std::memory_order_relaxed);
@@ -2045,15 +2035,13 @@ try {
     done_stat = 1;
     cond_var.notify_all();
   }
-#ifdef NDEBUG
-} catch (const std::exception& ex) {
+} TOPLINGDB_CATCH (const std::exception& ex) {
   ERROR("Etcd.set(%s, done) throws exception = %s", key, ex);
   info_log->Flush();
   done_stat = 2; // error
   g_etcd_err.fetch_add(1, std::memory_order_relaxed);
   cond_var.notify_all();
 }
-#endif
 });
   if (0 == done_stat) {
     for (int retry = 0; retry < 1000; ++retry) {
