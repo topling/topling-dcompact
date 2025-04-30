@@ -153,10 +153,10 @@ endif
 include ${ROCKSDB_HOME}/make_config.mk
 ifeq (${JEMALOC},1)
   INC += ${JEMALLOC_INCLUDE}
-  LIBS += ${JEMALLOC_LIB}
+  LIBS := ${JEMALLOC_LIB} ${LIBS}
 endif
 ifeq (${WITH_JEMALLOC_FLAG},1)
-  LIBS += -ljemalloc
+  LIBS := -ljemalloc ${LIBS}
 endif
 
 BUILD_NAME := ${UNAME_MachineSystem}-${COMPILER}-bmi2-${WITH_BMI2}
