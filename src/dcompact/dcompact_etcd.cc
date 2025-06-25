@@ -2000,6 +2000,7 @@ worker->m_running_mtx.unlock();
     }
     str.append("</tbody></table>");
   }
+  TOPLING_GCC_NOLINT(-Wredundant-move);
   return std::move(str);
 }
 
