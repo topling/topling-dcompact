@@ -21,8 +21,6 @@ public:
   bool need_db_get = false;
   std::string hoster_root;
   std::string instance_name; // default is hostname
-  terark::hash_strmap<int> m_dbcf_min_level; // for individual db.cf
-  std::shared_ptr<json> m_dbcf_min_level_js;
   mutable int num_cumu_exec = 0;
   mutable int num_live_exec = 0;
 

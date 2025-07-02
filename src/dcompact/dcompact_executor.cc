@@ -693,24 +693,6 @@ void CompactExecFactoryCommon::init(const json& js, const class SidePluginRepo& 
     }
     instance_name.resize(len);
   }
-  auto iter = js.find("dbcf_min_level");
-  if (js.end() != iter) {
-    // if using this feature, dbname should be same as basename(cf_path[0])
-    const json& js_dbcf = iter.value();
-    if (!js_dbcf.is_object()) {
-      THROW_InvalidArgument("json[dbcf_min_level] must be object");
-    }
-    for (auto& item : js_dbcf.items()) {
-      const std::string& key = item.key(); // db:cf
-      const json& val = item.value();
-      if (!val.is_number_integer()) {
-        THROW_InvalidArgument("json[dbcf_min_level][*].value() must be integer");
-      }
-      int min_level = val.get<int>();
-      m_dbcf_min_level[key] = min_level;
-    }
-    m_dbcf_min_level_js.reset(new json(js_dbcf));
-  }
 }
 void CompactExecFactoryCommon::ToJson(const json& dump_options, json& djs, const SidePluginRepo& repo)
 const {
@@ -723,9 +705,6 @@ const {
   ROCKSDB_JSON_SET_PROP(djs, need_db_get);
   ROCKSDB_JSON_SET_PROP(djs, num_cumu_exec);
   ROCKSDB_JSON_SET_PROP(djs, num_live_exec);
-  if (!m_dbcf_min_level.empty()) {
-    djs["dbcf_min_level"] = *m_dbcf_min_level_js;
-  }
 }
 void CompactExecFactoryCommon::Update(const json& js) {
   ROCKSDB_JSON_OPT_PROP(js, dcompact_min_level); // default 2
@@ -745,45 +724,6 @@ void CompactExecFactoryCommon::Update(const json& js) {
 bool CompactExecFactoryCommon::ShouldRunLocal(const Compaction* c) const {
   // -1 means unknown level, will run local
   int output_level = c->output_level();
-  if (!m_dbcf_min_level.empty()) {
-    // now dbcf_min_level is deprecated, instead, define a new factory
-    // with "template": ${template_obj}
-    const std::string& cfname = c->column_family_data()->GetName();
-    // use base name of cfpath as dbname, so --
-    // if using this feature, dbname should be same as basename(cf_path.back())
-    const std::string& cfpath = c->immutable_options()->cf_paths.back().path;
-   #if defined(_MSC_VER)
-    auto dbname = std::filesystem::path(cfpath).filename().string();
-   #else
-    auto dbname = (const char*)memrchr(cfpath.data(), '/', cfpath.size());
-    dbname = dbname ? dbname + 1 : cfpath.data();
-   #endif
-    const std::string colon_cfname = ":" + cfname;
-    const std::string dbcf = dbname + colon_cfname;
-    size_t idx = m_dbcf_min_level.find_i(dbcf); // try dbname:cfname
-    if (m_dbcf_min_level.end_i() == idx) { // not found dbname:cfname
-      idx = m_dbcf_min_level.find_i(dbname); // try dbname
-    }
-    if (m_dbcf_min_level.end_i() == idx) {
-      idx = m_dbcf_min_level.find_i(colon_cfname); // try :cfname
-    }
-    if (m_dbcf_min_level.end_i() != idx) {
-      int min_level = m_dbcf_min_level.val(idx);
-      Logger* info_log = c->immutable_options()->info_log.get();
-      DEBG("ShouldRunLocal: output_level = %d, min_level[%s ~ %s] = %d",
-            output_level, dbcf, m_dbcf_min_level.key(idx), min_level);
-      if (min_level < 0) {
-        // this is a corner case(a bit useful for todis hash/set/zset)!
-        // run dcompact on bottom most only, if compact this cf needs read
-        // meta data from another db or cf, toper level may read many useless
-        // meta data, in this case, bottom most level compaction needs little
-        // meta data.
-        min_level = -min_level;
-        return output_level < min_level || !c->bottommost_level();
-      }
-      return output_level < min_level;
-    }
-  }
   if (dcompact_min_level < 0) {
     if (need_db_get) // must run local compact at bottom level
       return output_level < -dcompact_min_level ||
