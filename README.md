@@ -52,7 +52,7 @@ property name | type |default value | description
 `allow_fallback_to_local`| bool |false | Whether to allow fallback to local compact if Distributed Compaction fails
 `hoster_root`     | string | empty | The root directory of the db, generally set the same as the `path` variable in DB::Open.
 `instance_name`   | string | empty | The db instance name, in a multi-tenant scenario, the CompactWorker node uses instance\_name to distinguish different db instances
-`job_url_root`    | string | empty | 查看分布式 Compact Job 详细信息的 http url, 一般可以与 http_workers 中的 web_url 相同
+`job_url_root`    | string | empty | http url to view detail Compact Job info, typically same with web_url in http_workers
 `nfs_mnt_src`     | string | empty | NFS mount source
 `nfs_mnt_opt`     | string | empty | NFS mount options
 `http_max_retry`  |  int   | 3 | Maximum number of retries
