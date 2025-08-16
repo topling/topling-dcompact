@@ -62,9 +62,6 @@ namespace ROCKSDB_NAMESPACE {
 
 using namespace terark;
 using namespace terark::terark_placeholders;
-static std::string basename(const std::string& p) {
-  return std::filesystem::path(p).filename().string();
-}
 
 #define ToStr(...) std::string(buf, snprintf(buf, sizeof(buf), __VA_ARGS__))
 #define AddFmt(str,...) str.append(buf,snprintf(buf,sizeof(buf),__VA_ARGS__))
@@ -789,6 +786,16 @@ class DcompactEtcdExec : public CompactExecCommon {
   Status Attempt(const CompactionParams&, CompactionResults*);
   void CleanFiles(const CompactionParams&, const CompactionResults&) override;
   void ReportFee(const CompactionParams&, const CompactionResults&);
+  std::string basename(const std::string& p) {
+    //return std::filesystem::path(p).filename().string(); // wrong
+    if (Slice(p).starts_with(m_factory->hoster_root)) {
+      // remove hoster_root prefix
+      std::string suffix = p.substr(m_factory->hoster_root.size() + 1);
+      return suffix;
+    }
+    THROW_STD(invalid_argument, "hoster_root=[%s], path=[%s]",
+              m_factory->hoster_root.c_str(), p.c_str());
+  }
 };
 
 void DcompactEtcdExec::AlertDcompactFail(const Status& s) {
