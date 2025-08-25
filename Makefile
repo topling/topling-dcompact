@@ -17,6 +17,7 @@ ifeq "$(origin LD)" "default"
   LD := ${CXX}
 endif
 
+ifndef COMPILER
 #COMPILER := $(shell ${CXX} --version | head -1 | awk '{split($$3, Ver, "."); printf("%s-%d.%d", $$1, Ver[1], Ver[2]);}')
 # Makefile is stupid to parsing $(shell echo ')')
 #COMPILER := $(shell ${CXX} --version | head -1 | sed 's/\(\S\+\)\s\+([^()]*)\s\+\([0-9]\+.[0-9]\+\).*/\1-\2/')
@@ -24,6 +25,7 @@ tmpfile := $(shell mktemp compiler-XXXXXX)
 COMPILER := $(shell ${CXX} tools/configure/compiler.cpp -o ${tmpfile}.exe && ./${tmpfile}.exe && rm -f ${tmpfile}*)
 #$(error COMPILER=${COMPILER})
 UNAME_MachineSystem := $(shell uname -m -s | sed 's:[ /]:-:g')
+endif
 TerarkLibDir ?= ${TERARK_CORE_HOME}/build/${UNAME_MachineSystem}-${COMPILER}-bmi2-${WITH_BMI2}/lib
 BUILD_NAME := ${UNAME_MachineSystem}-${COMPILER}-bmi2-${WITH_BMI2}
 BUILD_ROOT := build/${BUILD_NAME}

@@ -11,6 +11,11 @@ echo COMPILER=$COMPILER 1>&2
 rm -f $EnvConf
 mkdir -p `dirname $EnvConf`
 
+if [ "${IS_CYGWIN}" = 1 -o "${IS_CYGWIN}" = 0 ]; then
+  echo  IS_CYGWIN=${IS_CYGWIN} >> $EnvConf
+  exit 0
+fi
+
 cat > is_cygwin.cpp << "EOF"
 #include <stdio.h>
 int main() {
