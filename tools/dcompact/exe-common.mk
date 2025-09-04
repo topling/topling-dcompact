@@ -272,9 +272,9 @@ ${EXE_BINS_A} : LDFLAGS := ${AFR_ASAN} ${LDFLAGS}
 ${EXE_BINS_D} : LDFLAGS := ${DBG_ASAN} ${LDFLAGS}
 ${EXE_BINS_R} : LDFLAGS := ${RLS_ASAN} ${LDFLAGS}
 
-${EXE_BINS_A} : LIBS := ${LINK_ROCKSDB_A} -L${LIB_DIR} -lterark-{zbs,fsa,core}-${COMPILER}-a ${LIBS}
-${EXE_BINS_D} : LIBS := ${LINK_ROCKSDB_D} -L${LIB_DIR} -lterark-{zbs,fsa,core}-${COMPILER}-d ${LIBS}
-${EXE_BINS_R} : LIBS := ${LINK_ROCKSDB_R} -L${LIB_DIR} -lterark-{zbs,fsa,core}-${COMPILER}-r ${LIBS}
+${EXE_BINS_A} : LIBS := ${LINK_ROCKSDB_A} ${LIBS}
+${EXE_BINS_D} : LIBS := ${LINK_ROCKSDB_D} ${LIBS}
+${EXE_BINS_R} : LIBS := ${LINK_ROCKSDB_R} ${LIBS}
 
 clean :
 	rm -rf ${BUILD_ROOT} dbg rls afr
