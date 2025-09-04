@@ -48,6 +48,10 @@ CXXFLAGS += -D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE -D_LARGEFILE64_SOURCE
 #CXXFLAGS += -Wno-unused-variable
 #CXXFLAGS += -Wconversion -Wno-sign-conversion
 
+ifeq ($(DISABLE_PERF_CONTEXT),1)
+  CXXFLAGS += -DNPERF_CONTEXT
+endif
+
 #CXXFLAGS += -Wfatal-errors
 #DBG_ASAN ?= -fsanitize=address
 #AFR_ASAN ?= -fsanitize=address
