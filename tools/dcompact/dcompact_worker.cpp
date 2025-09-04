@@ -628,10 +628,18 @@ explicit Job(const DcompactMeta& meta)
   job_dbname[2] = MakePath(job_dbname[1], m_meta.dbname);
   job_dbname[3] = CatJobID(job_dbname[2], m_meta.job_id);
   job_dbname[4] = CatAttempt(job_dbname[3], m_meta.attempt);
+ #if 1
+  std::error_code ec; // m_meta.dbname may have multiple components
+  std::filesystem::create_directories(job_dbname[4], ec);
+  if (ec) {
+    TERARK_DIE_S("filesystem::create_directories(%s) = %s", job_dbname[4], ec.message());
+  }
+ #else
   for (const string& subdir : job_dbname) {
     Status s = env->CreateDirIfMissing(subdir);
     TERARK_VERIFY_S(s.ok(), "CreateDirIfMissing(%s) = %s", subdir, s.ToString());
   }
+ #endif
   CreateLogger("LOG");
 }
 
