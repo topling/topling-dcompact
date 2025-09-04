@@ -976,11 +976,14 @@ Status DcompactEtcdExec::Execute(const CompactionParams& params,
       goto Done;
     else if (s.IsBusy())
       m_env->SleepForMicroseconds(f->retry_sleep_time * 1000000);
+    else if (s.IsNotSupported())
+      goto BenignFail; // should be SerDeWrite fail
   }
   AlertDcompactFail(s);
   if (!m_factory->allow_fallback_to_local) {
     TERARK_DIE_S("Fail with MaxRetry = %d, die: %s", m_attempt, s.ToString());
   }
+BenignFail:
   m_done = true; // fail
   CleanFiles(params, *results);
 Done:
@@ -1075,6 +1078,12 @@ TOPLINGDB_TRY
   } TOPLINGDB_CATCH (const std::exception& ex) {
     TERARK_DIE_S("file = %s, exception: %s", params_fname, ex);
   } TOPLINGDB_CATCH (const Status& s) {
+    if (s.IsNotSupported()) {
+      // this can be intentional, in flink, it is too late when we know
+      // non-fixed-len list element in Serialize compaction filter params,
+      // we throw such an exception to indicate this case
+      return s;
+    }
     TERARK_DIE_S("file = %s, Status: %s", params_fname, s.ToString());
   } TOPLINGDB_CATCH (...) {
     TERARK_DIE_S("file = %s, exception: unknown", params_fname);
