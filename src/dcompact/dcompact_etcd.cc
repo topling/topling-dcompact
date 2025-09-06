@@ -721,9 +721,12 @@ class DcompactEtcdExecFactory final : public CompactExecFactoryCommon {
     }
   }
   std::string WorkersView(const json& dump_options, int cols) const;
-  std::string JobUrl(const std::string& dbname, int job_id, int attempt) const final {
+  std::string JobUrl(const std::string& dbname_or_path, int job_id, int attempt) const final {
     std::string str;
     if (!job_url_root.empty()) {
+      std::string dbname = Slice(dbname_or_path).starts_with(hoster_root)
+                         ? basename(dbname_or_path)
+                         : dbname_or_path;
       char buf[64];
       auto len = snprintf(buf, sizeof(buf), "job-%05d/att-%02d", job_id, attempt);
       str.reserve(job_url_root.size() + instance_name.size() + m_start_time.size() + dbname.size() + len + 20);
@@ -786,17 +789,20 @@ class DcompactEtcdExec : public CompactExecCommon {
   Status Attempt(const CompactionParams&, CompactionResults*);
   void CleanFiles(const CompactionParams&, const CompactionResults&) override;
   void ReportFee(const CompactionParams&, const CompactionResults&);
-  std::string basename(const std::string& p) {
-    //return std::filesystem::path(p).filename().string(); // wrong
-    if (Slice(p).starts_with(m_factory->hoster_root)) {
-      // remove hoster_root prefix
-      std::string suffix = p.substr(m_factory->hoster_root.size() + 1);
-      return suffix;
-    }
-    THROW_STD(invalid_argument, "hoster_root=[%s], path=[%s]",
-              m_factory->hoster_root.c_str(), p.c_str());
+  std::string basename(const std::string& p) const {
+    return m_factory->basename(p);
   }
 };
+std::string CompactExecFactoryCommon::basename(const std::string& p) const {
+  //return std::filesystem::path(p).filename().string(); // wrong
+  if (Slice(p).starts_with(this->hoster_root)) {
+    // remove hoster_root prefix
+    std::string suffix = p.substr(this->hoster_root.size() + 1);
+    return suffix;
+  }
+  THROW_STD(invalid_argument, "hoster_root=[%s], path=[%s]",
+            this->hoster_root.c_str(), p.c_str());
+}
 
 void DcompactEtcdExec::AlertDcompactFail(const Status& s) {
   auto f = static_cast<const DcompactEtcdExecFactory*>(m_factory);
