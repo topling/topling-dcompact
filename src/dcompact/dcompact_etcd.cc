@@ -724,9 +724,7 @@ class DcompactEtcdExecFactory final : public CompactExecFactoryCommon {
   std::string JobUrl(const std::string& dbname_or_path, int job_id, int attempt) const final {
     std::string str;
     if (!job_url_root.empty()) {
-      std::string dbname = Slice(dbname_or_path).starts_with(hoster_root)
-                         ? basename(dbname_or_path)
-                         : dbname_or_path;
+      fstring dbname = basename(dbname_or_path, false /*strict*/);
       char buf[64];
       auto len = snprintf(buf, sizeof(buf), "job-%05d/att-%02d", job_id, attempt);
       str.reserve(job_url_root.size() + instance_name.size() + m_start_time.size() + dbname.size() + len + 20);
@@ -789,16 +787,20 @@ class DcompactEtcdExec : public CompactExecCommon {
   Status Attempt(const CompactionParams&, CompactionResults*);
   void CleanFiles(const CompactionParams&, const CompactionResults&) override;
   void ReportFee(const CompactionParams&, const CompactionResults&);
-  std::string basename(const std::string& p) const {
-    return m_factory->basename(p);
+  implicit_convertible_fstring basename(const std::string& p) const {
+    return m_factory->basename(p, true /*strict*/);
   }
 };
-std::string CompactExecFactoryCommon::basename(const std::string& p) const {
+implicit_convertible_fstring
+CompactExecFactoryCommon::basename(const std::string& p, bool strict) const {
   //return std::filesystem::path(p).filename().string(); // wrong
   if (Slice(p).starts_with(this->hoster_root)) {
     // remove hoster_root prefix
-    std::string suffix = p.substr(this->hoster_root.size() + 1);
-    return suffix;
+    auto suffix = fstring(p).substr(this->hoster_root.size() + 1);
+    return implicit_convertible_fstring(suffix);
+  }
+  if (!strict) {
+    return implicit_convertible_fstring(p);
   }
   THROW_STD(invalid_argument, "hoster_root=[%s], path=[%s]",
             this->hoster_root.c_str(), p.c_str());

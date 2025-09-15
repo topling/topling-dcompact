@@ -28,7 +28,8 @@ public:
 
   bool ShouldRunLocal(const Compaction*) const override;
   bool AllowFallbackToLocal() const override;
-  std::string basename(const std::string& path) const;
+  terark::implicit_convertible_fstring
+  basename(const std::string& path, bool strict) const;
 
   // new virtual functions
   virtual void ToJson(const json& dump_options, json&, const SidePluginRepo&) const;
