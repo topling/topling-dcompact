@@ -129,7 +129,7 @@ copy_sst_files 为 true 时，compact 中 input sst file 会被拷贝到 `${host
 对象存储一般都可以通过 fuse mount 到文件系统，所以只需要将数据拷贝到对象存储的文件系统中即可。
 
 ### 1.5. 注意事项
-CFOptions 的 `level_compaction_dynamic_level_bytes` 务必显示指定为 `false`，为 `true` 时，很可能会跳过 L1，直接 compact 到 L**n**，产生很大的单个 compact ，导致长时间的卡顿。
+CFOptions 的 `level_compaction_dynamic_level_bytes` 务必显示指定为 `false`，为 `true` 时，L0 的 SST(特别是 CSPPMemTable 转化来的巨大 SST) 很可能会跳过 L1，直接 compact 到 L**n**，产生很大的单个 compact ，导致长时间的卡顿。
 
 ## 2. dcompact worker
 
