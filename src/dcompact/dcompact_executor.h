@@ -9,7 +9,7 @@
 
 namespace ROCKSDB_NAMESPACE {
 
-using nlohmann::json;
+using topling::json;
 
 class CompactExecFactoryCommon : public CompactionExecutorFactory {
 public:
