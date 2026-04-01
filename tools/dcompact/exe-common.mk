@@ -153,14 +153,18 @@ else
   DLL_PATH_VAR =   LD_LIBRARY_PATH
 endif
 
-# rocksdb must have been built before this make
-include ${ROCKSDB_HOME}/make_config.mk
-ifeq (${JEMALOC},1)
-  INC += ${JEMALLOC_INCLUDE}
-  LIBS := ${JEMALLOC_LIB} ${LIBS}
-endif
-ifeq (${WITH_JEMALLOC_FLAG},1)
-  LIBS := -ljemalloc ${LIBS}
+ifndef DISABLE_JEMALLOC
+  ifeq ($(shell ${CXX} -std=c89 -w -x c - -ljemalloc <<< 'main(){mallocx(8,0);}' -o /dev/null > /dev/null && echo 1),1)
+    DISABLE_JEMALLOC := 0
+  else
+    DISABLE_JEMALLOC := 1
+  endif
+endif # DISABLE_JEMALLOC
+ifeq (${DISABLE_JEMALLOC},0)
+  # -ljemalloc should be the first
+  LIBS := -Wl,--no-as-needed -ljemalloc ${LIBS} -Wl,--as-needed
+else
+  CXXFLAGS += -DTOPLING_DISABLE_JEMALLOC
 endif
 
 BUILD_NAME := ${UNAME_MachineSystem}-${COMPILER}-bmi2-${WITH_BMI2}
