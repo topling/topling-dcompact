@@ -17,7 +17,7 @@
 #include <terark/io/FileStream.hpp>
 #include <terark/lru_map.hpp>
 #include <terark/num_to_str.hpp>
-#include <terark/util/process.hpp>
+#include <terark/util/autofree.hpp>
 #include <terark/util/linebuf.hpp>
 #include <terark/util/process.hpp>
 #include <terark/util/profiling.hpp>
@@ -71,14 +71,20 @@ static const long LOG_LEVEL = terark::getEnvLong("LOG_LEVEL", 2);
 #define ERROR(...) PrintLog(0, "ERROR", __VA_ARGS__)
 
 #define HttpErr(code, fmt, ...) do { \
+  AutoFree<char> http_err_buf; \
+  int http_err_len = asprintf(&http_err_buf.p, "%s" fmt, \
+      TERARK_PP_SmartForPrintf("", ##__VA_ARGS__)); \
   const char* strNow = StrDateTimeNow(); \
-mg_printf(conn, "HTTP/1.1 %d\r\nContent-type: text\r\n\r\n%s: " fmt, code, \
-          TERARK_PP_SmartForPrintf(strNow, ##__VA_ARGS__)); \
-  fprintf(stderr, "%s ERROR %s:%d: " fmt "\n", strNow, \
-          RocksLogShorterFileName(__FILE__), \
-          TERARK_PP_SmartForPrintf(__LINE__, ##__VA_ARGS__)); \
+  size_t http_err_body_len = strlen(strNow) + 2 + http_err_len; \
+  mg_printf(conn, "HTTP/1.1 %d Error\r\n" \
+                  "Content-Length: %zu\r\n" \
+                  "Content-Type: text/plain\r\n\r\n" \
+                  "%s: %s", \
+            code, http_err_body_len, strNow, http_err_buf.p); \
+  fprintf(stderr, "%s ERROR %s:%d: %s\n", strNow, \
+          RocksLogShorterFileName(__FILE__), __LINE__, http_err_buf.p); \
   if (info_log) \
-    ROCKS_LOG_ERROR(info_log, "%s" fmt, TERARK_PP_SmartForPrintf("", ##__VA_ARGS__)); \
+    ROCKS_LOG_ERROR(info_log, "%s", http_err_buf.p); \
 } while (0)
 
 #define AddFmt(str, ...) do { \
@@ -142,8 +148,19 @@ using namespace terark;
 profiling pf;
 extern json from_query_string(const Slice);
 extern void mg_print_cur_time(mg_connection *conn);
+extern std::string str_cur_time(const SidePluginRepo*);
 extern std::string cur_time_stat();
 std::string ReadPostData(mg_connection* conn);
+
+static void WriteHttpResponse(mg_connection* conn, const char* status,
+                              const char* content_type, Slice body) {
+  mg_printf(conn, "HTTP/1.1 %s\r\n"
+                  "Content-Length: %zu\r\n"
+                  "Content-Type: %s\r\n\r\n",
+            status, body.size(), content_type);
+  mg_write(conn, body.data(), body.size());
+}
+
 // GetZipServerPID and PostHttpRequest are defined in top_zip_table_builder.cc
 __attribute__((weak)) pid_t GetZipServerPID();
 __attribute__((weak)) json PostHttpRequest(const std::string& uri, const std::string& body, bool strict);
@@ -1613,29 +1630,28 @@ void ShutDownCleanFiles() const {
   }
 }
 
-static void write_html_header(struct mg_connection* conn, const json& query, const char* name) {
+static void write_html_header(string_appender<>& oss, const json& query, const char* name) {
   bool from_db_node = JsonSmartBool(query, "from_db_node", false);
-  mg_printf(conn, "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n");
   int refresh = JsonSmartInt(query, "refresh", 0);
   if (refresh > 0) {
-    mg_printf(conn,
+    oss|
       "<html><head>"
-      "<title>%s</title>\n"
-      "<meta http-equiv='refresh' content='%d'>\n"
+      "<title>"|name|"</title>\n"
+      "<meta http-equiv='refresh' content='"|refresh|"'>\n"
       "<link rel='stylesheet' type='text/css' href='/style.css'>\n"
       "</head>"
-      "<body>\n", name, refresh);
+      "<body>\n";
   }
   else {
-    mg_printf(conn, "<html><head><title>%s</title>"
+    oss|"<html><head><title>"|name|"</title>"
       "<link rel='stylesheet' type='text/css' href='/style.css'>\n"
       "</head>"
-      "<body>\n", name);
+      "<body>\n";
   }
   if (from_db_node) {
-    mg_printf(conn, "<p>%s</p>\n", cur_time_stat().c_str());
+    oss|"<p>"|cur_time_stat()|"</p>\n";
   } else {
-    mg_printf(conn, R"(
+    oss|R"(
 <script>
 function SetParam(name, value) {
   const url = new URL(location.href);
@@ -1645,11 +1661,11 @@ function SetParam(name, value) {
   location.href = url.href;
 }
 </script>
-    )");
-    mg_print_cur_time(conn);
+    )";
+    oss|str_cur_time(nullptr);
   }
   if (WEB_DOMAIN)
-    mg_printf(conn, "<script>document.domain = '%s';</script>\n", WEB_DOMAIN);
+    oss|"<script>document.domain = '"|WEB_DOMAIN|"';</script>\n";
 }
 
 class BasePostHttpHandler : public CivetHandler {
@@ -1701,6 +1717,8 @@ class ShutdownCompactHandler : public BasePostHttpHandler {
  public:
   void doIt(const DcompactMeta& meta, struct mg_connection* conn) override {
     intrusive_ptr p = g_acceptedJobs.find(meta);
+    int len;
+    AutoFree<char> buf;
     if (p) {
       // ShutDown needs sleep, run in thread
       std::thread([p=std::move(p),meta]() {
@@ -1709,19 +1727,22 @@ class ShutdownCompactHandler : public BasePostHttpHandler {
         info_log->Flush();
         INFO("shutdown success: %s", MetaForLog(meta));
       }).detach();
-      mg_printf(conn,
-        "HTTP/1.1 200 OK\r\nContent-Type: text/json\r\n\r\n"
+      len = asprintf(&buf.p,
         R"({"status": "ok", "addr": "%s"})", ADVERTISE_ADDR.c_str()
       );
     }
     else {
-      mg_printf(conn,
-        "HTTP/1.1 200 OK\r\nContent-Type: text/json\r\n\r\n"
+      len = asprintf(&buf.p,
         R"({"status": "NotFound", "addr": "%s"})", ADVERTISE_ADDR.c_str()
       );
       Logger* info_log = nullptr;
       WARN("shutdown NotFound: %s", MetaForLog(meta));
     }
+    mg_printf(conn,
+      "HTTP/1.1 200 OK\r\n"
+      "Content-Length: %d\r\n"
+      "Content-Type: text/json\r\n\r\n"
+      "%s", len, buf.p);
   }
 };
 
@@ -1730,21 +1751,26 @@ class ProbeCompactHandler : public BasePostHttpHandler {
   void doIt(const DcompactMeta& meta, struct mg_connection* conn) override {
     Logger* info_log = nullptr;
     intrusive_ptr p = g_acceptedJobs.find(meta);
+    int len;
+    AutoFree<char> buf;
     if (p) {
       info_log = p->m_log.get();
-      mg_printf(conn,
-        "HTTP/1.1 200 OK\r\nContent-Type: text/json\r\n\r\n"
+      len = asprintf(&buf.p,
         R"({"status": "ok", "addr": "%s"})", ADVERTISE_ADDR.c_str()
       );
       ROCKS_LOG_INFO(info_log, "got http probe req");
     }
     else {
-      mg_printf(conn,
-        "HTTP/1.1 200 OK\r\nContent-Type: text/json\r\n\r\n"
+      len = asprintf(&buf.p,
         R"({"status": "NotFound", "addr": "%s"})", ADVERTISE_ADDR.c_str()
       );
       DEBG("probe NotFound: %s", MetaForLog(meta));
     }
+    mg_printf(conn,
+      "HTTP/1.1 200 OK\r\n"
+      "Content-Length: %d\r\n"
+      "Content-Type: text/json\r\n\r\n"
+      "%s", len, buf.p);
   }
 };
 
@@ -1758,6 +1784,9 @@ class ListHttpHandler : public CivetHandler {
       bool html = JsonSmartBool(query, "html", true);
       terark::string_appender<> oss;
       oss.reserve(64*1024);
+      if (html) {
+        write_html_header(oss, query, "list");
+      }
       oss|R"(
 <link rel='stylesheet' type='text/css' href='/style.css'>
 <style>
@@ -1834,12 +1863,16 @@ td {
       oss|"<p></p>\n";
       oss|"<pre id='kill-result'></pre>\n";
       if (html) {
-        write_html_header(conn, query, "list");
+        oss|"</body></html>\n";
+        mg_printf(conn, "HTTP/1.1 200 OK\r\n"
+                        "Content-Length: %zu\r\n"
+                        "Content-Type: text/html\r\n\r\n", oss.size());
         mg_write(conn, oss.str());
-        mg_printf(conn, "</body></html>\n");
       }
       else {
-        mg_printf(conn, "HTTP/1.1 200 OK\r\nContent-Type: text/json\r\n\r\n");
+        mg_printf(conn, "HTTP/1.1 200 OK\r\n"
+                        "Content-Length: %zu\r\n"
+                        "Content-Type: text/json\r\n\r\n", oss.size());
         mg_write(conn, oss.str());
       }
     DCOMPACT_WORKER_CATCH(query_string)
@@ -1910,13 +1943,22 @@ class StatHttpHandler : public CivetHandler {
         JS_ModuleGitInfo_Add(js, html);
       }
       if (html) {
-        write_html_header(conn, query, "stat");
-        mg_write(conn, JsonToString(js, query));
-        mg_printf(conn, "</body></html>\n");
+        string_appender<> oss;
+        oss.reserve(4096);
+        write_html_header(oss, query, "stat");
+        oss | JsonToString(js, query);
+        oss | "</body></html>\n";
+        mg_printf(conn, "HTTP/1.1 200 OK\r\n"
+                        "Content-Length: %zu\r\n"
+                        "Content-Type: text/html\r\n\r\n", oss.size());
+        mg_write(conn, oss);
       }
       else {
-        mg_printf(conn, "HTTP/1.1 200 OK\r\nContent-Type: text/json\r\n\r\n");
-        mg_write(conn, JsonToString(js, query));
+        std::string jstr = JsonToString(js, query);
+        mg_printf(conn, "HTTP/1.1 200 OK\r\n"
+                        "Content-Length: %zu\r\n"
+                        "Content-Type: text/json\r\n\r\n", jstr.size());
+        mg_write(conn, jstr);
       }
     DCOMPACT_WORKER_CATCH(query_string)
     return true;
@@ -1927,6 +1969,9 @@ class StopHttpHandler : public CivetHandler {
  public:
   bool handleGet(CivetServer*, struct mg_connection* conn) override {
     g_stop = true;
+    static constexpr char body[] = "{\"status\": \"OK\"}";
+    WriteHttpResponse(conn, "200 OK", "text/json",
+                      Slice(body, sizeof(body) - 1));
     return true;
   }
 };
@@ -1934,12 +1979,14 @@ class HealthHttpHandler : public CivetHandler {
  public:
   bool handleGet(CivetServer*, struct mg_connection* conn) override {
     if (g_stop) {
-      mg_write(conn, "HTTP/1.1 412 Precondition Failed\r\n"
-                     "Content-Type: text/json\r\n\r\n"
-                     "{\"status\": \"Compact Worker is stopping\"}");
+      static constexpr char body[] =
+          "{\"status\": \"Compact Worker is stopping\"}";
+      WriteHttpResponse(conn, "412 Precondition Failed", "text/json",
+                        Slice(body, sizeof(body) - 1));
     } else {
-      mg_write(conn, "HTTP/1.1 200 OK\r\nContent-Type: text/json\r\n\r\n"
-                     "{\"status\": \"OK\"}");
+      static constexpr char body[] = "{\"status\": \"OK\"}";
+      WriteHttpResponse(conn, "200 OK", "text/json",
+                        Slice(body, sizeof(body) - 1));
     }
     return true;
   }
@@ -1955,9 +2002,10 @@ class CommandHttpHandler : public CivetHandler {
  public:
   bool handleGet(CivetServer*, struct mg_connection* conn) override {
     if (g_stop) {
-      mg_write(conn, "HTTP/1.1 412 Precondition Failed\r\n"
-                     "Content-Type: text/json\r\n\r\n"
-                     "{\"status\": \"Compact Worker is stopping\"}");
+      static constexpr char body[] =
+          "{\"status\": \"Compact Worker is stopping\"}";
+      WriteHttpResponse(conn, "412 Precondition Failed", "text/json",
+                        Slice(body, sizeof(body) - 1));
     } else {
       const mg_request_info* req = mg_get_request_info(conn);
       fstring q = req->query_string;
@@ -1972,15 +2020,17 @@ class CommandHttpHandler : public CivetHandler {
             out_err[1] = std::move(err);
             except = ex ? ex->what() : "(null)";
           });
-        mg_printf(conn, "HTTP/1.1 200 OK\r\nContent-Type: text/json\r\n\r\n"
-                  "{\"status\": \"OK\"}\r\n"
-                  "command exception: %s\r\n"
-                  "command stderr: %s\r\n"
-                  "command stdout: %s\r\n",
-                  except.c_str(), out_err[1].c_str(), out_err[0].c_str());
+        string_appender<> response;
+        response|"{\"status\": \"OK\"}\r\n"
+                |"command exception: "|except|"\r\n"
+                |"command stderr: "|out_err[1]|"\r\n"
+                |"command stdout: "|out_err[0]|"\r\n";
+        WriteHttpResponse(conn, "200 OK", "text/json", response);
       } else {
-        mg_write(conn, "HTTP/1.1 200 OK\r\nContent-Type: text/json\r\n\r\n"
-                      "{\"status\": \"missing param cmd\"}");
+        static constexpr char body[] =
+            "{\"status\": \"missing param cmd\"}";
+        WriteHttpResponse(conn, "200 OK", "text/json",
+                          Slice(body, sizeof(body) - 1));
       }
     }
     return true;
@@ -2031,6 +2081,7 @@ static int main(int argc, char* argv[]) {
   ConnectEtcd();
   vector<string> mg_options;
   const char* doc_root = nullptr;
+  bool enable_keep_alive_set = false;
   for (int opt = 0; (opt = getopt(argc, argv, "D:")) != -1; ) {
     switch (opt) {
       default:
@@ -2043,9 +2094,15 @@ static int main(int argc, char* argv[]) {
           if (fstring(optarg, eq) == "document_root") {
             doc_root = eq+1;
           }
+          if (fstring(optarg, eq) == "enable_keep_alive") {
+            enable_keep_alive_set = true;
+          }
           mg_options.emplace_back(optarg, eq);
           mg_options.emplace_back(eq+1);
         } else {
+          if (fstring(optarg) == "enable_keep_alive") {
+            enable_keep_alive_set = true;
+          }
           mg_options.emplace_back(optarg);
           mg_options.push_back(""); // has no value
         }
@@ -2060,6 +2117,10 @@ static int main(int argc, char* argv[]) {
   } else {
     mg_options.push_back("document_root");
     mg_options.push_back(WORKER_DB_ROOT);
+  }
+  if (!enable_keep_alive_set) {
+    mg_options.push_back("enable_keep_alive");
+    mg_options.push_back("yes");
   }
   mg_init_library(0);
   CivetServer civet(mg_options);
@@ -2099,6 +2160,7 @@ static int main(int argc, char* argv[]) {
   }
   for (auto& t : work_threads) t.join();
 
+  civet.close();
   mg_exit_library();
 #ifdef TOPLING_DCOMPACT_USE_ETCD
   delete g_etcd;
@@ -2310,10 +2372,12 @@ static void RunOneJob(const DcompactMeta& meta, mg_connection* conn) noexcept {
   g_jobsAccepting.fetch_sub(1, std::memory_order_relaxed);
   j->accept_time = j->env->NowMicros();
   j->m_job_creation_time = t4; // for QueueItem::score()
+  string_appender<> response;
+  response | "{\"status\": \"ok\", \"addr\": \"" | ADVERTISE_ADDR | "\"}";
   mg_printf(conn, "HTTP/1.1 200 OK\r\n"
+                  "Content-Length: %zu\r\n"
                   "Content-type: text\r\n\r\n"
-                  R"({"status": "ok", "addr": "%s"})",
-            ADVERTISE_ADDR.c_str());
+                  "%s", response.size(), response.c_str());
 
   // capture vars by value, not by ref
   g_workQueue.push_back({[=]() {
