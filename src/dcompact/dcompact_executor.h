@@ -35,6 +35,8 @@ public:
   virtual void ToJson(const json& dump_options, json&, const SidePluginRepo&) const;
   virtual void Update(const json&);
   virtual bool FileNumberAllocationEnabled() const { return false; }
+  virtual bool NotifyWorkerActivity(const json&, const json&,
+                                    const SidePluginRepo&) const;
 };
 
 class CompactExecCommon : public CompactionExecutor {

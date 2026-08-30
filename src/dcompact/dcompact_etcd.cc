@@ -45,6 +45,7 @@
 #include <filesystem>
 #include <map>
 #include <random>
+#include <set>
 
 #if 0
 #define Err(fmt, ...) fprintf(stderr, "%s:%d: " fmt "\n", \
@@ -522,6 +523,8 @@ class DcompactEtcdExecFactory final : public CompactExecFactoryCommon {
   json dcompact_http_headers;
   curl_slist* m_http_headers = nullptr;
   std::shared_ptr<ThreadPool> m_copy_file_threadpool;
+  mutable IgnoreCopyMutex m_active_executors_mtx;
+  mutable std::set<CompactExecCommon*> m_active_executors;
 
 #ifdef TOPLING_DCOMPACT_USE_ETCD
   etcd::Client* m_etcd = nullptr;
@@ -756,6 +759,10 @@ class DcompactEtcdExecFactory final : public CompactExecFactoryCommon {
   bool FileNumberAllocationEnabled() const final {
     return !hoster_http_url.empty();
   }
+  bool NotifyWorkerActivity(const json& query, const json& body,
+                            const SidePluginRepo& repo) const final;
+  void RegisterExecutor(DcompactEtcdExec* exec) const;
+  void UnregisterExecutor(DcompactEtcdExec* exec) const;
   std::string WorkersView(const json& dump_options, int cols) const;
   std::string JobUrl(const std::string& dbname_or_path, int job_id, int attempt) const final {
     std::string str;
@@ -810,6 +817,7 @@ class DcompactEtcdExec : public CompactExecCommon {
   uint64_t m_input_raw_val_bytes = 0;
   uint64_t m_input_zip_kv_bytes = 0;
   uint64_t m_start_ts = 0;
+  std::atomic<uint64_t> m_last_worker_activity_us{0};
   uint64_t input_raw_bytes() const {
     return m_input_raw_key_bytes + m_input_raw_val_bytes;
   }
@@ -830,6 +838,50 @@ class DcompactEtcdExec : public CompactExecCommon {
     return m_factory->basename(p, true /*strict*/);
   }
 };
+void DcompactEtcdExecFactory::RegisterExecutor(DcompactEtcdExec* exec) const {
+  exec->m_last_worker_activity_us.store(
+      exec->m_env->NowMicros(), std::memory_order_relaxed);
+  std::lock_guard<IgnoreCopyMutex> lock(m_active_executors_mtx);
+  ROCKSDB_VERIFY(m_active_executors.emplace(exec).second);
+}
+void DcompactEtcdExecFactory::UnregisterExecutor(DcompactEtcdExec* exec) const {
+  std::lock_guard<IgnoreCopyMutex> lock(m_active_executors_mtx);
+  ROCKSDB_VERIFY_EQ(m_active_executors.erase(exec), 1);
+}
+bool DcompactEtcdExecFactory::NotifyWorkerActivity(
+    const json& query, const json& body, const SidePluginRepo& repo) const {
+  uint64_t dcompact_executor = 0;
+  std::string dbname;
+  std::string db_session_id;
+  // std::string labour_id; // is in json but not used
+  int job_id = -1;
+  int attempt = -1;
+  ROCKSDB_JSON_REQ_PROP(body, dcompact_executor);
+  ROCKSDB_JSON_REQ_PROP(body, dbname);
+  ROCKSDB_JSON_REQ_PROP(body, db_session_id);
+  ROCKSDB_JSON_REQ_PROP(body, job_id);
+  ROCKSDB_JSON_REQ_PROP(body, attempt);
+  if (job_id < 0 || attempt < 0) {
+    THROW_InvalidArgument("job_id and attempt must be non-negative");
+  }
+  std::lock_guard<IgnoreCopyMutex> lock(m_active_executors_mtx);
+  auto key = reinterpret_cast<CompactExecCommon*>(
+      static_cast<uintptr_t>(dcompact_executor));
+  auto iter = m_active_executors.find(key);
+  if (iter == m_active_executors.end()) {
+    return false;
+  }
+  auto exec = static_cast<DcompactEtcdExec*>(*iter);
+  std::string exec_dbname = exec->basename(exec->m_params->dbname);
+  if (dbname != exec_dbname ||
+      db_session_id != exec->m_params->db_session_id ||
+      job_id != exec->m_params->job_id || attempt != exec->m_attempt) {
+    return false;
+  }
+  exec->m_last_worker_activity_us.store(
+      exec->m_env->NowMicros(), std::memory_order_relaxed);
+  return true;
+}
 implicit_convertible_fstring
 CompactExecFactoryCommon::basename(const std::string& p, bool strict) const {
   //return std::filesystem::path(p).filename().string(); // wrong
@@ -1056,6 +1108,15 @@ TOPLINGDB_TRY
 {
   using namespace std::chrono;
   auto f = static_cast<const DcompactEtcdExecFactory*>(m_factory);
+  const bool register_executor = !f->hoster_http_url.empty();
+  if (register_executor) {
+    f->RegisterExecutor(this);
+  }
+  ROCKSDB_SCOPE_EXIT(
+    if (register_executor) {
+      f->UnregisterExecutor(this);
+    }
+  );
 #ifdef TOPLING_DCOMPACT_USE_ETCD
   auto pEtcd = f->m_etcd;
   results->status = Status::Incomplete("executing command: " + f->etcd_url);
@@ -1257,6 +1318,16 @@ TOPLINGDB_TRY
   FileStream compact_done_fp;
   while (!(done || shutting_down->load(std::memory_order_relaxed))) {
     t5 = m_env->NowMicros();
+    if (t5 - t4 > timeout_us) {
+      break;
+    }
+    auto active = m_last_worker_activity_us.load(std::memory_order_relaxed);
+    auto next_probe_time = active + one_timeout.count();
+    if (t5 < next_probe_time) {
+      done_probe_fail_num = 0;
+      std::this_thread::sleep_for(microseconds(next_probe_time - t5));
+      continue;
+    }
     s = SubmitHttp("/probe", meta_jstr, nth_http);
     if (!s.ok()) {
       if (compact_done_fp.xopen(compact_done_file, "r")) {
@@ -2105,6 +2176,9 @@ void DcompactEtcdExec::SetParams(CompactionParams* params,
     return;
   }
   json js = json::parse(params->extensible_js_data);
+  // Opaque CompactExecCommon pointer value for DB host lookup.
+  js["dcompact_executor"] = static_cast<uint64_t>(
+      reinterpret_cast<uintptr_t>(static_cast<CompactExecCommon*>(this)));
   js["hoster_http_url"] = f->hoster_http_url;
   if (!f->hoster_http_headers.empty()) {
     js["hoster_http_headers"] = f->hoster_http_headers;

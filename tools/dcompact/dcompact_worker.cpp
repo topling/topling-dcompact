@@ -365,6 +365,7 @@ static const bool TOPLINGDB_CACHE_SST_FILE_ITER
     = getEnvBool("TOPLINGDB_CACHE_SST_FILE_ITER", false);
 
 struct FileNumberAllocationParams {
+  uint64_t dcompact_executor = 0;
   std::string hoster_http_url;
   std::map<std::string, std::string> hoster_http_headers;
 
@@ -376,6 +377,7 @@ struct FileNumberAllocationParams {
     if (!js.contains("hoster_http_url")) {
       return;
     }
+    ROCKSDB_JSON_REQ_PROP(js, dcompact_executor);
     ROCKSDB_JSON_REQ_PROP(js, hoster_http_url);
     ROCKSDB_JSON_OPT_PROP(js, hoster_http_headers);
   }
@@ -407,6 +409,8 @@ static Status RequestFileNumber(const DcompactMeta& meta,
   json request = {
       {"dbname", meta.dbname},
       {"db_session_id", params.db_session_id},
+      {"dcompact_executor", allocation.dcompact_executor},
+      {"labour_id", ADVERTISE_ADDR},
       {"job_id", meta.job_id},
       {"attempt", meta.attempt},
   };
@@ -419,16 +423,25 @@ static Status RequestFileNumber(const DcompactMeta& meta,
   }
   try {
     json result = json::parse(response.first);
-    auto iter = result.find("file_number");
-    if (iter == result.end() || !iter.value().is_number_unsigned()) {
-      return Status::Corruption(
-          "allocate_file_number response has no unsigned file_number");
+    std::string status;
+    ROCKSDB_JSON_REQ_PROP(result, status);
+    if (status == "not_active") {
+      return Status::Aborted("dcompact attempt is not active");
     }
-    *file_number = iter.value().get<uint64_t>();
+    if (status != "ok") {
+      return Status::Corruption(
+          "allocate_file_number response has unknown status", status);
+    }
+    uint64_t allocated_file_number = 0;
+    ROCKSDB_JSON_REQ_PROP_3(result, allocated_file_number, "file_number");
+    *file_number = allocated_file_number;
     if (*file_number == 0 || *file_number > kFileNumberMask) {
       return Status::Corruption(
           "allocate_file_number returned an out-of-range file_number");
     }
+  } catch (const Status& status) {
+    return Status::Corruption("allocate_file_number response",
+                              status.ToString());
   } catch (const json::exception& ex) {
     return Status::Corruption("allocate_file_number response", ex.what());
   }

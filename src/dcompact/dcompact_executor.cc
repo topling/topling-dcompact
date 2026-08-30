@@ -722,6 +722,11 @@ void CompactExecFactoryCommon::Update(const json& js) {
   ROCKSDB_JSON_OPT_PROP(js, need_db_get); // default is false
 }
 
+bool CompactExecFactoryCommon::NotifyWorkerActivity(
+    const json&, const json&, const SidePluginRepo&) const {
+  return false;
+}
+
 bool CompactExecFactoryCommon::ShouldRunLocal(const Compaction* c) const {
   // -1 means unknown level, will run local
   int output_level = c->output_level();
@@ -791,21 +796,33 @@ struct CompactExecFactoryCommon_Manip :
     if (action == query.end()) {
       return PluginManipFunc::HandleUpdate(p, query, body, repo);
     }
-    if (!action.value().is_string() ||
-        action.value().get_ref<const std::string&>() !=
-            "allocate_file_number") {
-      THROW_InvalidArgument("bad dcompact_action");
-    }
     auto dc = dynamic_cast<CompactExecFactoryCommon*>(p);
+    bool worker_active = dc && dc->NotifyWorkerActivity(query, body, repo);
+    if (action.value().is_string() &&
+        action.value().get_ref<const std::string&>() ==
+            "allocate_file_number") {
+      return AllocateFileNumber(dc, worker_active, body, repo);
+    }
+    return PluginManipFunc::HandleUpdate(p, query, body, repo);
+  }
+  std::string AllocateFileNumber(CompactExecFactoryCommon* dc,
+                                 bool worker_active,
+                                 const json& body,
+                                 const SidePluginRepo& repo) const {
     if (dc == nullptr || !dc->FileNumberAllocationEnabled()) {
       THROW_InvalidArgument("file-number allocation is not enabled");
     }
+    if (!worker_active) {
+      return json{{"status", "not_active"}}.dump();
+    }
     std::string dbname;
     std::string db_session_id;
+    std::string labour_id;
     int job_id = -1;
     int attempt = -1;
     ROCKSDB_JSON_REQ_PROP(body, dbname);
     ROCKSDB_JSON_REQ_PROP(body, db_session_id);
+    ROCKSDB_JSON_REQ_PROP(body, labour_id);
     ROCKSDB_JSON_REQ_PROP(body, job_id);
     ROCKSDB_JSON_REQ_PROP(body, attempt);
     if (job_id < 0 || attempt < 0) {
@@ -829,10 +846,10 @@ struct CompactExecFactoryCommon_Manip :
     auto db_options = root_db->GetDBOptions();
     ROCKS_LOG_INFO(db_options.info_log,
                    "DcompactEtcd allocated file number %llu for %s "
-                   "job-%05d/att-%02d",
+                   "job-%05d/att-%02d from labour_id %s",
                    static_cast<unsigned long long>(file_number),
-                   dbname.c_str(), job_id, attempt);
-    return json{{"file_number", file_number}}.dump();
+                   dbname.c_str(), job_id, attempt, labour_id.c_str());
+    return json{{"status", "ok"}, {"file_number", file_number}}.dump();
   }
 };
 ROCKSDB_REG_PluginManip("DcompactCmd", CompactExecFactoryCommon_Manip);
