@@ -43,6 +43,7 @@
 #endif
 
 #include <filesystem>
+#include <map>
 #include <random>
 
 #if 0
@@ -815,6 +816,7 @@ class DcompactEtcdExec : public CompactExecCommon {
   void AlertDcompactFail(const Status&);
  public:
   explicit DcompactEtcdExec(const DcompactEtcdExecFactory* fac);
+  void SetParams(CompactionParams*, const Compaction*) override;
   Status SubmitHttp(const fstring action, const std::string& meta_jstr, size_t nth_http) noexcept;
   Status RenameFile(const std::string& src, const std::string& dst, off_t fsize) override;
   Status MaybeCopyFiles(const CompactionParams& params);
@@ -868,9 +870,6 @@ void DcompactEtcdExec::AlertDcompactFail(const Status& s) {
   bjs["full_server_id"] = m_full_server_id;
   bjs["labour_id"] = m_labour_id;
   bjs["meta"] = meta.ToJsonObj();
-  if (!f->web_show_secret) {
-    bjs["meta"].erase("hoster_http_headers");
-  }
   std::string body = bjs.dump();
 #if !defined(_MSC_VER)
   if (!f->alert_email.empty()) {
@@ -1092,8 +1091,6 @@ TOPLINGDB_TRY
 #endif
   meta.instance_name = f->instance_name;
   meta.dbname = dbname;
-  meta.hoster_http_url = f->hoster_http_url;
-  meta.hoster_http_headers = f->hoster_http_headers;
   meta.hoster_root = f->hoster_root;
   meta.output_root = params.cf_paths.back().path;
   meta.nfs_type = f->nfs_type;
@@ -2086,6 +2083,21 @@ worker->m_running_mtx.unlock();
 
 DcompactEtcdExec::DcompactEtcdExec(const DcompactEtcdExecFactory* fac)
     : CompactExecCommon(fac) {
+}
+
+void DcompactEtcdExec::SetParams(CompactionParams* params,
+                                 const Compaction* compaction) {
+  CompactExecCommon::SetParams(params, compaction);
+  auto f = static_cast<const DcompactEtcdExecFactory*>(m_factory);
+  if (f->hoster_http_url.empty()) {
+    return;
+  }
+  json js = json::parse(params->extensible_js_data);
+  js["hoster_http_url"] = f->hoster_http_url;
+  if (!f->hoster_http_headers.empty()) {
+    js["hoster_http_headers"] = f->hoster_http_headers;
+  }
+  params->extensible_js_data = js.dump();
 }
 
 ROCKSDB_REG_Plugin("DcompactEtcd",

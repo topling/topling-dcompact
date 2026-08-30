@@ -36,6 +36,7 @@ using boost::intrusive_ptr;
 #include <sys/prctl.h>
 
 #include <filesystem>
+#include <map>
 
 #include <curl/curl.h>
 
@@ -346,22 +347,40 @@ static const bool MULTI_PROCESS = getEnvBool("MULTI_PROCESS", false);
 static const bool TOPLINGDB_CACHE_SST_FILE_ITER
     = getEnvBool("TOPLINGDB_CACHE_SST_FILE_ITER", false);
 
+struct FileNumberAllocationParams {
+  std::string hoster_http_url;
+  std::map<std::string, std::string> hoster_http_headers;
+
+  void Parse(const std::string& extensible_js_data) {
+    if (extensible_js_data.empty()) {
+      return;
+    }
+    json js = json::parse(extensible_js_data);
+    if (!js.contains("hoster_http_url")) {
+      return;
+    }
+    ROCKSDB_JSON_REQ_PROP(js, hoster_http_url);
+    ROCKSDB_JSON_OPT_PROP(js, hoster_http_headers);
+  }
+};
+
 static Status RequestFileNumber(const DcompactMeta& meta,
                                 const CompactionParams& params,
+                                const FileNumberAllocationParams& allocation,
                                 Logger* info_log, uint64_t* file_number) {
   if (HOSTER_HTTP_TIMEOUT <= 0) {
     return Status::InvalidArgument("HOSTER_HTTP_TIMEOUT must be positive");
   }
-  for (const auto& [key, value] : meta.hoster_http_headers) {
+  for (const auto& [key, value] : allocation.hoster_http_headers) {
     if (key.find_first_of("\r\n") != std::string::npos ||
         value.find_first_of("\r\n") != std::string::npos) {
       return Status::InvalidArgument("hoster_http_headers contains a newline");
     }
   }
-  if (meta.hoster_http_url.find('#') != std::string::npos) {
+  if (allocation.hoster_http_url.find('#') != std::string::npos) {
     return Status::InvalidArgument("hoster_http_url must not contain a fragment");
   }
-  std::string url = meta.hoster_http_url;
+  std::string url = allocation.hoster_http_url;
   if (url.find('?') == std::string::npos) {
     url.push_back('?');
   } else if (!url.empty() && url.back() != '?' && url.back() != '&') {
@@ -375,7 +394,7 @@ static Status RequestFileNumber(const DcompactMeta& meta,
       {"attempt", meta.attempt},
   };
   auto response = HttpPost(url, request.dump(), info_log,
-                           &meta.hoster_http_headers,
+                           &allocation.hoster_http_headers,
                            HOSTER_HTTP_TIMEOUT);
   if (response.second != 200) {
     return Status::IOError("allocate_file_number HTTP status " +
@@ -401,7 +420,6 @@ static Status RequestFileNumber(const DcompactMeta& meta,
 
 static std::string MetaForLog(const DcompactMeta& meta) {
   json js = meta.ToJsonObj();
-  js.erase("hoster_http_headers");
   return js.dump();
 }
 
@@ -1043,6 +1061,7 @@ int RunCompact(FILE* in) const {
   Logger* info_log = m_log.get();
   CompactionParams  params;
   params.info_log = info_log;
+  FileNumberAllocationParams file_number_allocation;
   EnvOptions env_options;
   // env_options.use_mmap_reads = true; // not needed any more
   env_options.allow_fdatasync = false;
@@ -1088,6 +1107,7 @@ int RunCompact(FILE* in) const {
   DEBG("Beg SerDeRead: %s", attempt_dir);
   TOPLINGDB_TRY {
     SerDeRead(in, &params);
+    file_number_allocation.Parse(params.extensible_js_data);
   }
   TOPLINGDB_CATCH (const std::exception& ex) {
     ERROR("SerDeRead = %s", ex.what());
@@ -1102,7 +1122,7 @@ int RunCompact(FILE* in) const {
     return 0;
   }
   DEBG("End SerDeRead: %s", attempt_dir);
-  const bool direct_output = !m_meta.hoster_http_url.empty();
+  const bool direct_output = !file_number_allocation.hoster_http_url.empty();
   if (!params.full_history_ts_low.empty()) {
     VERIFY_EQ(cfo.comparator->timestamp_size(),
                      params.full_history_ts_low.size());
@@ -1365,7 +1385,8 @@ int RunCompact(FILE* in) const {
   if (direct_output) {
     compaction_job.SetFileNumberGenerator([&](uint64_t* file_number) {
       Status status =
-          RequestFileNumber(m_meta, params, info_log, file_number);
+          RequestFileNumber(m_meta, params, file_number_allocation,
+                            info_log, file_number);
       if (!status.ok()) {
         return status;
       }
@@ -1791,7 +1812,6 @@ td {
         oss|"async function kill_"|i|"() {\n";
         oss|"  if (g_killed_"|i|") { alert('already killed'); return;}\n";
         json meta_js = job->m_meta.ToJsonObj();
-        meta_js.erase("hoster_http_headers");
         oss|"  var meta_js = `"|meta_js.dump()|"`;";
         oss^R"EOS(
   const response = await fetch('/shutdown' + document.location.search, {
