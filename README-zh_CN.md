@@ -27,6 +27,7 @@
       "class": "DcompactEtcd",
       "params": {
         "allow_fallback_to_local": true,
+        "hoster_http_url": "http://db-host:2011/CompactionExecutorFactory/dcompact",
         "hoster_root": "/nvmepool/shared/db1",
         "instance_name": "db1",
         "nfs_mnt_src": ":/nvmepool/shared",
@@ -56,6 +57,8 @@
 -------|:----:|-------|--------
 allow_fallback_to_local| bool |false | 如果分布式 Compact 失败，是否允许回退到本地 Compact，如果不允许，则会调用 abort 主动 coredump
 copy_sst_files     | bool   | false | 不可通过 http 在线修改，此时 hoster_root 不能为 db 数据目录的前缀
+hoster_http_url    | string | 空 | DB host 上当前 `DcompactEtcd` 实例的 HTTP endpoint。设置后，worker 将输出 SST 直接写入已有的输出 DbPath，不再进行 rename
+hoster_http_headers| object | 空 | worker 向 `hoster_http_url` 申请 file number 时附带的 HTTP header，通常用于认证
 hoster_root        | string | 空 | 该 db 的根目录，一般设置为与 DB::Open 中的 `path` 变量相同。
 instance_name      | string | 空 | 该 db 实例名，在多租户场景下，CompactWorker 结点使用 instance\_name 区分不同的 db 实例
 job_url_root       | string | 空 | 查看分布式 Compact Job 详细信息的 http url, 一般可以与 http_workers 中的 web_url 相同
@@ -128,7 +131,26 @@ copy_sst_files 为 true 时，compact 中 input sst file 会被拷贝到 `${host
 
 对象存储一般都可以通过 fuse mount 到文件系统，所以只需要将数据拷贝到对象存储的文件系统中即可。
 
-### 1.5. 注意事项
+### 1.5. 直接输出到已有 DbPath
+
+将 `hoster_http_url` 设置为 DB host 上同一个 `DcompactEtcd` 实例的 HTTP endpoint：
+
+```json
+"hoster_http_url": "http://db-host:2011/CompactionExecutorFactory/dcompact",
+"hoster_http_headers": {
+  "Authorization": "Bearer TOKEN"
+}
+```
+
+URL 中不要附加 action 参数。`hoster_http_headers` 是可选配置。
+
+启用后，dcompact_worker 从 DB host 申请输出 file number，并将输出 SST 直接写入已有的输出 DbPath（最后一个 `cf_path`），不再先把输出 SST 写入 `job-xxxxx/att-xx` 再执行 rename。该模式适用于 S3、OSS 等支持 delete、但不支持 rename 的对象存储文件系统。
+
+所选 DbPath 必须原先就已存在，并且 worker 必须能通过现有的 `hoster_root`/mount 路径映射访问它。`hoster_http_url` 与 `copy_sst_files` 互斥，不能同时启用。worker 报告 compaction 失败时会删除已经直接输出的文件；成功时保留文件，由 DB host 安装到版本中。因 DB host 超时或重试而未安装的文件需要另行清理。
+
+启用前应升级所有 dcompact_worker；不支持 `hoster_http_url` 的旧 worker 会被拒绝，不会退回旧式 rename 流程。
+
+### 1.6. 注意事项
 CFOptions 的 `level_compaction_dynamic_level_bytes` 务必显示指定为 `false`，为 `true` 时，L0 的 SST(特别是 CSPPMemTable 转化来的巨大 SST) 很可能会跳过 L1，直接 compact 到 L**n**，产生很大的单个 compact ，导致长时间的卡顿。
 
 ## 2. dcompact worker
@@ -173,6 +195,7 @@ WEB\_DOMAIN | 用于 dcompact worker web view iframe 的自适应高度
 MULTI\_PROCESS | 如果使用 ToplingDB 的程序及其 CompactionFilter/EventHandler 等插件使用了全局变量，就无法在同一个进程中执行来自多个 DB 实例的 Compact 任务，此时，将 MULTI\_PROCESS 设为 true 可以通过多进程的方式运行 Compact
 ZIP\_SERVER\_OPTIONS | ToplingZipTable 环境变量，当 MULTI\_PROCESS 为 true 时，设置 ZipServer 的 http 参数，例如：<br/>`export ZIP_SERVER_OPTIONS=listening_ports=8090:num_threads=32`
 FEE_URL | 发送计费信息的 url
+HOSTER\_HTTP\_TIMEOUT | worker 申请 file number 的超时时间，单位为秒；默认值为 3，必须为正数。该超时属于 worker 一方
 LABOUR_ID | 计费信息中的 labourId，一般是 dcompact_worker 所在的主机名（hostname）
 CLOUD_PROVIDER | 计费信息中的 provider
 ENABLE_HTTP_STOP | 是否启用 http stop 接口，禁用该功能可避免通过 http 误操作或被攻击停止 dcompact_worker 服务。默认 false。

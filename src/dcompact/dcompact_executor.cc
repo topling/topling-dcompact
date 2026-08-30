@@ -10,6 +10,7 @@
 #include <winsock.h> // for gethostname
 #endif
 #include "dcompact_executor.h"
+#include <db/db_impl/db_impl.h>
 #include <logging/logging.h>
 #include <rocksdb/merge_operator.h>
 #include <topling/side_plugin_repo.h>
@@ -783,6 +784,56 @@ struct CompactExecFactoryCommon_Manip :
     std::string name = fac.Name();
     THROW_InvalidArgument("Is not DistCompaction, but is: " + name);
   }
+  std::string HandleUpdate(CompactionExecutorFactory* p,
+                           const json& query, const json& body,
+                           const SidePluginRepo& repo) const final {
+    auto action = query.find("dcompact_action");
+    if (action == query.end()) {
+      return PluginManipFunc::HandleUpdate(p, query, body, repo);
+    }
+    if (!action.value().is_string() ||
+        action.value().get_ref<const std::string&>() !=
+            "allocate_file_number") {
+      THROW_InvalidArgument("bad dcompact_action");
+    }
+    auto dc = dynamic_cast<CompactExecFactoryCommon*>(p);
+    if (dc == nullptr || !dc->FileNumberAllocationEnabled()) {
+      THROW_InvalidArgument("file-number allocation is not enabled");
+    }
+    std::string dbname;
+    std::string db_session_id;
+    int job_id = -1;
+    int attempt = -1;
+    ROCKSDB_JSON_REQ_PROP(body, dbname);
+    ROCKSDB_JSON_REQ_PROP(body, db_session_id);
+    ROCKSDB_JSON_REQ_PROP(body, job_id);
+    ROCKSDB_JSON_REQ_PROP(body, attempt);
+    if (job_id < 0 || attempt < 0) {
+      THROW_InvalidArgument("job_id and attempt must be non-negative");
+    }
+    DB_Ptr dbp(nullptr);
+    if (!repo.Get(dbname, &dbp)) {
+      THROW_NotFound("database not found: " + dbname);
+    }
+    DB* root_db = dbp.db->GetRootDB();
+    auto db_impl = dynamic_cast<DBImpl*>(root_db);
+    if (db_impl == nullptr) {
+      THROW_InvalidArgument("database root is not DBImpl: " + dbname);
+    }
+    uint64_t file_number = 0;
+    Status status =
+        db_impl->AllocateFileNumber(db_session_id, &file_number);
+    if (!status.ok()) {
+      throw status;
+    }
+    auto db_options = root_db->GetDBOptions();
+    ROCKS_LOG_INFO(db_options.info_log,
+                   "DcompactEtcd allocated file number %llu for %s "
+                   "job-%05d/att-%02d",
+                   static_cast<unsigned long long>(file_number),
+                   dbname.c_str(), job_id, attempt);
+    return json{{"file_number", file_number}}.dump();
+  }
 };
 ROCKSDB_REG_PluginManip("DcompactCmd", CompactExecFactoryCommon_Manip);
 ROCKSDB_REG_PluginManip("DcompactEtcd", CompactExecFactoryCommon_Manip);
@@ -806,6 +857,8 @@ void DcompactMeta::FromJsonObj(const json& js) {
   ROCKSDB_JSON_OPT_PROP(js, nfs_mnt_opt);
   ROCKSDB_JSON_REQ_PROP(js, instance_name);
   ROCKSDB_JSON_REQ_PROP(js, dbname);
+  ROCKSDB_JSON_OPT_PROP(js, hoster_http_url);
+  ROCKSDB_JSON_OPT_PROP(js, hoster_http_headers);
   ROCKSDB_JSON_REQ_PROP(js, start_time);
   ROCKSDB_JSON_REQ_PROP(js, start_time_epoch);
   ROCKSDB_JSON_OPT_PROP(js, estimate_time_us);
@@ -838,6 +891,10 @@ json DcompactMeta::ToJsonObj() const {
     ROCKSDB_JSON_SET_PROP(js, nfs_mnt_opt);
   ROCKSDB_JSON_SET_PROP(js, instance_name);
   ROCKSDB_JSON_SET_PROP(js, dbname);
+  if (!hoster_http_url.empty())
+    ROCKSDB_JSON_SET_PROP(js, hoster_http_url);
+  if (!hoster_http_headers.empty())
+    ROCKSDB_JSON_SET_PROP(js, hoster_http_headers);
   ROCKSDB_JSON_SET_PROP(js, start_time);
   ROCKSDB_JSON_SET_PROP(js, start_time_epoch);
   ROCKSDB_JSON_SET_PROP(js, estimate_time_us);

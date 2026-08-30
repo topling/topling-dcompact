@@ -498,6 +498,8 @@ class DcompactEtcdExecFactory final : public CompactExecFactoryCommon {
   uint32_t    alert_interval = 60; // seconds
   std::string web_domain; // now just for iframe auto height
   std::string job_url_root;
+  std::string hoster_http_url;
+  std::map<std::string, std::string> hoster_http_headers;
   std::string m_start_time;
   uint64_t    m_start_time_epoch; // for ReportFee
   size_t estimate_speed = 10e6; // speed in bytes-per-second
@@ -563,11 +565,39 @@ class DcompactEtcdExecFactory final : public CompactExecFactoryCommon {
     CompactExecFactoryCommon::init(js, repo);
     ROCKSDB_JSON_OPT_PROP(js, oneshot_dbname_prefix);
     ROCKSDB_JSON_OPT_PROP(js, copy_sst_files);
+    ROCKSDB_JSON_OPT_PROP(js, hoster_http_url);
     ROCKSDB_JSON_OPT_PROP(js, web_show_secret);
     ROCKSDB_JSON_OPT_PROP(js, alert_email);
     ROCKSDB_JSON_OPT_PROP(js, alert_http);
     ROCKSDB_JSON_OPT_PROP(js, web_domain);
     ROCKSDB_JSON_OPT_PROP(js, job_url_root);
+    if (copy_sst_files && !hoster_http_url.empty()) {
+      THROW_InvalidArgument(
+          "copy_sst_files and hoster_http_url are mutually exclusive");
+    }
+    if (hoster_http_url.find("dcompact_action=") != std::string::npos) {
+      THROW_InvalidArgument(
+          "hoster_http_url must not contain dcompact_action");
+    }
+    if (auto iter = js.find("hoster_http_headers"); js.end() != iter) {
+      const json& headers = iter.value();
+      if (!headers.is_object()) {
+        THROW_InvalidArgument("hoster_http_headers must be an json object");
+      }
+      hoster_http_headers.clear();
+      for (auto it = headers.begin(); it != headers.end(); ++it) {
+        if (!it.value().is_string()) {
+          THROW_InvalidArgument("hoster_http_headers[" + it.key() +
+                                "] is not a string");
+        }
+        const auto& value = it.value().get_ref<const std::string&>();
+        if (it.key().find_first_of("\r\n") != std::string::npos ||
+            value.find_first_of("\r\n") != std::string::npos) {
+          THROW_InvalidArgument("hoster_http_headers contains a newline");
+        }
+        hoster_http_headers.emplace(it.key(), value);
+      }
+    }
 #ifdef TOPLING_DCOMPACT_USE_ETCD
     ROCKSDB_JSON_OPT_PROP(js, etcd_root);
 #endif
@@ -699,6 +729,7 @@ class DcompactEtcdExecFactory final : public CompactExecFactoryCommon {
     ROCKSDB_JSON_SET_PROP(djs, alert_interval);
     ROCKSDB_JSON_SET_PROP(djs, web_domain);
     ROCKSDB_JSON_SET_PROP(djs, job_url_root);
+    ROCKSDB_JSON_SET_PROP(djs, hoster_http_url);
     djs[html ? R"(<a href='javascript:SetParam("cols","3")'>workers</a>)" : "workers"]
         = HttpParams::DumpVecToJson(http_workers, html);
     ROCKSDB_JSON_SET_ENUM(djs, load_balance);
@@ -718,7 +749,11 @@ class DcompactEtcdExecFactory final : public CompactExecFactoryCommon {
 #endif
     if (web_show_secret) {
       ROCKSDB_JSON_SET_PROP(djs, dcompact_http_headers);
+      ROCKSDB_JSON_SET_PROP(djs, hoster_http_headers);
     }
+  }
+  bool FileNumberAllocationEnabled() const final {
+    return !hoster_http_url.empty();
   }
   std::string WorkersView(const json& dump_options, int cols) const;
   std::string JobUrl(const std::string& dbname_or_path, int job_id, int attempt) const final {
@@ -833,6 +868,9 @@ void DcompactEtcdExec::AlertDcompactFail(const Status& s) {
   bjs["full_server_id"] = m_full_server_id;
   bjs["labour_id"] = m_labour_id;
   bjs["meta"] = meta.ToJsonObj();
+  if (!f->web_show_secret) {
+    bjs["meta"].erase("hoster_http_headers");
+  }
   std::string body = bjs.dump();
 #if !defined(_MSC_VER)
   if (!f->alert_email.empty()) {
@@ -1054,6 +1092,8 @@ TOPLINGDB_TRY
 #endif
   meta.instance_name = f->instance_name;
   meta.dbname = dbname;
+  meta.hoster_http_url = f->hoster_http_url;
+  meta.hoster_http_headers = f->hoster_http_headers;
   meta.hoster_root = f->hoster_root;
   meta.output_root = params.cf_paths.back().path;
   meta.nfs_type = f->nfs_type;
@@ -1274,6 +1314,22 @@ TOPLINGDB_TRY
         std::this_thread::sleep_for(one_timeout);
       }
       SerDeRead(fp, results);
+      if (!f->hoster_http_url.empty() && !results->output_dir.empty()) {
+        for (const auto& files : results->output_files) {
+          for (const auto& file : files) {
+            std::string file_name =
+                MakeTableFileName(results->output_dir, file.file_number);
+            Status delete_status = m_env->DeleteFile(file_name);
+            if (!delete_status.ok() && !delete_status.IsNotFound()) {
+              ROCKS_LOG_WARN(m_log, "DeleteFile(%s) = %s", file_name.c_str(),
+                             delete_status.ToString().c_str());
+            }
+          }
+        }
+        return Status::NotSupported(
+            "dcompact direct output requires a worker that supports "
+            "hoster_http_url");
+      }
       auto t6 = m_env->NowMicros();
       // remaining data in fp is for NotifyResults
       NotifyResults(fp, params); // maybe throw

@@ -196,7 +196,9 @@ std::pair<std::string, long> HttpGet(const std::string& urlstr) {
 }
 
 std::pair<std::string, long>
-HttpPost(const std::string& urlstr, const std::string& body, Logger* info_log) {
+HttpPost(const std::string& urlstr, const std::string& body, Logger* info_log,
+         const std::map<std::string, std::string>* extra_headers = nullptr,
+         long timeout = 0) {
   char errbuf[CURL_ERROR_SIZE];
   CURL* curl = curl_easy_init();
   std::string result_buf; result_buf.reserve(512);
@@ -207,7 +209,9 @@ HttpPost(const std::string& urlstr, const std::string& body, Logger* info_log) {
   curl_easy_setopt(curl, CURLOPT_TCP_FASTOPEN, 1L);
 #endif
   curl_easy_setopt(curl, CURLOPT_TCP_NODELAY, 1L);
-//curl_easy_setopt(curl, CURLOPT_TIMEOUT, 5L);
+  if (timeout > 0) {
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout);
+  }
   curl_easy_setopt(curl, CURLOPT_NOSIGNAL, true); // disable signal
   curl_easy_setopt(curl, CURLOPT_URL, url);
   curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body.data());
@@ -215,7 +219,13 @@ HttpPost(const std::string& urlstr, const std::string& body, Logger* info_log) {
   curl_easy_setopt(curl, CURLOPT_WRITEDATA, &result_buf);
   curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, &curl_my_recv);
   auto headers = curl_slist_append(nullptr, "Content-Type: application/json");
-  curl_slist_append(headers, "Expect:");
+  headers = curl_slist_append(headers, "Expect:");
+  if (extra_headers != nullptr) {
+    for (const auto& [key, value] : *extra_headers) {
+      std::string header = key + ": " + value;
+      headers = curl_slist_append(headers, header.c_str());
+    }
+  }
   curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
   TERARK_SCOPE_EXIT(curl_slist_free_all(headers));
   long http_code = -1;
@@ -327,12 +337,73 @@ static const string WORKER_DB_ROOT = GetDirFromEnv("WORKER_DB_ROOT", "/tmp"); //
 static const string NFS_MOUNT_ROOT = GetDirFromEnv("NFS_MOUNT_ROOT", "/mnt/nfs");
 static const string ADVERTISE_ADDR = getEnvStr("ADVERTISE_ADDR", "self");
 static const string FEE_URL = getEnvStr("FEE_URL", "");
+static const long HOSTER_HTTP_TIMEOUT =
+    getEnvLong("HOSTER_HTTP_TIMEOUT", 3); // seconds
 static const string LABOUR_ID = getEnvStr("LABOUR_ID", "");
 static const string CLOUD_PROVIDER = getEnvStr("CLOUD_PROVIDER", "");
 static const char* WEB_DOMAIN = getenv("WEB_DOMAIN");
 static const bool MULTI_PROCESS = getEnvBool("MULTI_PROCESS", false);
 static const bool TOPLINGDB_CACHE_SST_FILE_ITER
     = getEnvBool("TOPLINGDB_CACHE_SST_FILE_ITER", false);
+
+static Status RequestFileNumber(const DcompactMeta& meta,
+                                const CompactionParams& params,
+                                Logger* info_log, uint64_t* file_number) {
+  if (HOSTER_HTTP_TIMEOUT <= 0) {
+    return Status::InvalidArgument("HOSTER_HTTP_TIMEOUT must be positive");
+  }
+  for (const auto& [key, value] : meta.hoster_http_headers) {
+    if (key.find_first_of("\r\n") != std::string::npos ||
+        value.find_first_of("\r\n") != std::string::npos) {
+      return Status::InvalidArgument("hoster_http_headers contains a newline");
+    }
+  }
+  if (meta.hoster_http_url.find('#') != std::string::npos) {
+    return Status::InvalidArgument("hoster_http_url must not contain a fragment");
+  }
+  std::string url = meta.hoster_http_url;
+  if (url.find('?') == std::string::npos) {
+    url.push_back('?');
+  } else if (!url.empty() && url.back() != '?' && url.back() != '&') {
+    url.push_back('&');
+  }
+  url.append("dcompact_action=allocate_file_number&html=0");
+  json request = {
+      {"dbname", meta.dbname},
+      {"db_session_id", params.db_session_id},
+      {"job_id", meta.job_id},
+      {"attempt", meta.attempt},
+  };
+  auto response = HttpPost(url, request.dump(), info_log,
+                           &meta.hoster_http_headers,
+                           HOSTER_HTTP_TIMEOUT);
+  if (response.second != 200) {
+    return Status::IOError("allocate_file_number HTTP status " +
+                           std::to_string(response.second));
+  }
+  try {
+    json result = json::parse(response.first);
+    auto iter = result.find("file_number");
+    if (iter == result.end() || !iter.value().is_number_unsigned()) {
+      return Status::Corruption(
+          "allocate_file_number response has no unsigned file_number");
+    }
+    *file_number = iter.value().get<uint64_t>();
+    if (*file_number == 0 || *file_number > kFileNumberMask) {
+      return Status::Corruption(
+          "allocate_file_number returned an out-of-range file_number");
+    }
+  } catch (const json::exception& ex) {
+    return Status::Corruption("allocate_file_number response", ex.what());
+  }
+  return Status::OK();
+}
+
+static std::string MetaForLog(const DcompactMeta& meta) {
+  json js = meta.ToJsonObj();
+  js.erase("hoster_http_headers");
+  return js.dump();
+}
 
 static time_t g_lastActivityTime = 0;
 static time_t g_lastSuccessTime = 0;
@@ -1031,6 +1102,7 @@ int RunCompact(FILE* in) const {
     return 0;
   }
   DEBG("End SerDeRead: %s", attempt_dir);
+  const bool direct_output = !m_meta.hoster_http_url.empty();
   if (!params.full_history_ts_low.empty()) {
     VERIFY_EQ(cfo.comparator->timestamp_size(),
                      params.full_history_ts_low.size());
@@ -1051,8 +1123,9 @@ int RunCompact(FILE* in) const {
   imm_dbo.db_log_dir = attempt_dbname;
   imm_dbo.db_paths.clear();
   imm_dbo.db_paths.reserve(params.cf_paths.size() + 1);
-  size_t  output_path_id = params.cf_paths.size();
-  if (1 == output_path_id) {
+  size_t output_path_id = direct_output ? params.cf_paths.size() - 1
+                                        : params.cf_paths.size();
+  if (!direct_output && 1 == output_path_id) {
     // there is only one input path, set all path_id = 0, because files have
     // been copyed from multiple input paths to one path at db side when
     // copy_sst_files = true, but did not update packed_number_and_path_id,
@@ -1064,7 +1137,24 @@ int RunCompact(FILE* in) const {
   for (auto& x : params.cf_paths) {
     imm_dbo.db_paths.emplace_back(GetWorkerNodePath(x.path), x.target_size);
   }
-  imm_dbo.db_paths.emplace_back(attempt_dir, UINT64_MAX);
+  if (!direct_output) {
+    imm_dbo.db_paths.emplace_back(attempt_dir, UINT64_MAX);
+  }
+  std::mutex direct_output_bookkeeping_mutex;
+  std::vector<uint64_t> direct_output_file_numbers;
+  bool keep_direct_outputs = false;
+  auto cleanup_direct_outputs = [&] {
+    for (uint64_t file_number : direct_output_file_numbers) {
+      std::string file_name =
+          MakeTableFileName(imm_dbo.db_paths.back().path, file_number);
+      Status status = env->DeleteFile(file_name);
+      if (!status.ok() && !status.IsNotFound()) {
+        WARN("DeleteFile(%s) = %s", file_name, status.ToString());
+      }
+    }
+  };
+  TERARK_SCOPE_EXIT(
+      if (direct_output && !keep_direct_outputs) cleanup_direct_outputs());
   cfo.level_compaction_dynamic_file_size = params.level_compaction_dynamic_file_size;
   cfo.num_levels = params.num_levels;
   cfo.cf_paths = imm_dbo.db_paths;
@@ -1272,6 +1362,20 @@ int RunCompact(FILE* in) const {
     #endif
       blob_callback);
 
+  if (direct_output) {
+    compaction_job.SetFileNumberGenerator([&](uint64_t* file_number) {
+      Status status =
+          RequestFileNumber(m_meta, params, info_log, file_number);
+      if (!status.ok()) {
+        return status;
+      }
+      std::lock_guard<std::mutex> lock(direct_output_bookkeeping_mutex);
+      versions->MarkFileNumberUsed(*file_number);
+      direct_output_file_numbers.push_back(*file_number);
+      return Status::OK();
+    });
+  }
+
   ROCKS_LOG_DEBUG(info_log, "Calling compaction_job.Prepare()");
   compaction_job.Prepare();
   MutexUnlock();
@@ -1348,7 +1452,8 @@ auto writeObjResult = [&]{
       dst.marked_for_compaction = src.marked_for_compaction;
     }
   }
-  results->output_dir = GetHosterNodePath(attempt_dir);
+  results->output_dir = direct_output ? std::string()
+                                      : GetHosterNodePath(attempt_dir);
  #if (ROCKSDB_MAJOR * 10000 + ROCKSDB_MINOR * 10 + ROCKSDB_PATCH) < 70060
   results->compaction_stats = compaction_job.GetCompactionStats();
  #else
@@ -1426,6 +1531,7 @@ auto writeObjResult = [&]{
       std::string errmsg = strerror(errno);
       ERROR("%s : %s", compact_done_file, errmsg);
     }
+    keep_direct_outputs = results->status.ok();
     //INFO("after close(compact.done)");
     if (!FEE_URL.empty()) {
       ROCKS_LOG_DEBUG(info_log, "Report fee");
@@ -1580,7 +1686,7 @@ class ShutdownCompactHandler : public BasePostHttpHandler {
         Logger* info_log = p->m_log.get();
         p->ShutDown();
         info_log->Flush();
-        INFO("shutdown success: %s", meta.ToJsonStr());
+        INFO("shutdown success: %s", MetaForLog(meta));
       }).detach();
       mg_printf(conn,
         "HTTP/1.1 200 OK\r\nContent-Type: text/json\r\n\r\n"
@@ -1593,7 +1699,7 @@ class ShutdownCompactHandler : public BasePostHttpHandler {
         R"({"status": "NotFound", "addr": "%s"})", ADVERTISE_ADDR.c_str()
       );
       Logger* info_log = nullptr;
-      WARN("shutdown NotFound: %s", meta.ToJsonStr());
+      WARN("shutdown NotFound: %s", MetaForLog(meta));
     }
   }
 };
@@ -1616,7 +1722,7 @@ class ProbeCompactHandler : public BasePostHttpHandler {
         "HTTP/1.1 200 OK\r\nContent-Type: text/json\r\n\r\n"
         R"({"status": "NotFound", "addr": "%s"})", ADVERTISE_ADDR.c_str()
       );
-      DEBG("probe NotFound: %s", meta.ToJsonStr());
+      DEBG("probe NotFound: %s", MetaForLog(meta));
     }
   }
 };
@@ -1684,7 +1790,9 @@ td {
         oss|"\n<script>\nvar g_killed_"|i|" = false;\n";
         oss|"async function kill_"|i|"() {\n";
         oss|"  if (g_killed_"|i|") { alert('already killed'); return;}\n";
-        oss|"  var meta_js = `"|job->m_meta.ToJsonStr()|"`;";
+        json meta_js = job->m_meta.ToJsonObj();
+        meta_js.erase("hoster_http_headers");
+        oss|"  var meta_js = `"|meta_js.dump()|"`;";
         oss^R"EOS(
   const response = await fetch('/shutdown' + document.location.search, {
     method: 'POST',
@@ -2116,7 +2224,7 @@ static void RunOneJob(const DcompactMeta& meta, mg_connection* conn) noexcept {
   Logger* info_log = j->m_log.get();
   ROCKS_LOG_INFO(info_log, "ADVERTISE_ADDR: %s : %s",
                  ADVERTISE_ADDR.c_str(), cur_time_stat().c_str());
-  DEBG("meta: %s", meta.ToJsonStr());
+  DEBG("meta: %s", MetaForLog(meta));
   auto n_subcompacts = meta.n_subcompacts;
   auto running = g_jobsRunning.load(std::memory_order_relaxed);
   auto waiting = g_jobsWaiting.fetch_add(n_subcompacts, std::memory_order_relaxed);

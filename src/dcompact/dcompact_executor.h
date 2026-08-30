@@ -3,6 +3,8 @@
 //
 #pragma once
 
+#include <map>
+
 #include <db/compaction/compaction_executor.h>
 #include <topling/json_fwd.h>
 #include <terark/hash_strmap.hpp>
@@ -34,6 +36,7 @@ public:
   // new virtual functions
   virtual void ToJson(const json& dump_options, json&, const SidePluginRepo&) const;
   virtual void Update(const json&);
+  virtual bool FileNumberAllocationEnabled() const { return false; }
 };
 
 class CompactExecCommon : public CompactionExecutor {
@@ -70,6 +73,8 @@ struct DcompactMeta {
   std::string nfs_mnt_opt;
   std::string instance_name;
   std::string dbname; // dbname in SidePluginRepo, not dbpath
+  std::string hoster_http_url;
+  std::map<std::string, std::string> hoster_http_headers;
   std::string start_time; // hoster process start time
   uint64_t start_time_epoch; // time_t of start_time
   size_t   estimate_time_us = 0;

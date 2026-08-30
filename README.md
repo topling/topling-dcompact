@@ -24,6 +24,7 @@ Distributed Compaction is configured in the json configuration file:
       "class": "DcompactEtcd",
       "params": {
         "allow_fallback_to_local": true,
+        "hoster_http_url": "http://db-host:2011/CompactionExecutorFactory/dcompact",
         "hoster_root": "/nvmepool/shared/db1",
         "instance_name": "db1",
         "nfs_mnt_src": ":/nvmepool/shared",
@@ -50,6 +51,9 @@ Here, `CompactionExecutorFactory` is a C++ interface, which is a namespace in js
 property name | type |default value | description
 --------------|------|--------------|-------------------
 `allow_fallback_to_local`| bool |false | Whether to allow fallback to local compact if Distributed Compaction fails
+`copy_sst_files`   | bool |false | Copy input SST files to `hoster_root` before compaction. This option and `hoster_http_url` are mutually exclusive.
+`hoster_http_url`  | string | empty | The HTTP endpoint of this `DcompactEtcd` instance on the DB host. When set, the worker writes output SST files directly to the existing output DbPath without a rename.
+`hoster_http_headers` | object | empty | Additional HTTP headers sent by the worker when requesting file numbers from `hoster_http_url`, typically used for authentication.
 `hoster_root`     | string | empty | The root directory of the db, generally set the same as the `path` variable in DB::Open.
 `instance_name`   | string | empty | The db instance name, in a multi-tenant scenario, the CompactWorker node uses instance\_name to distinguish different db instances
 `job_url_root`    | string | empty | http url to view detail Compact Job info, typically same with web_url in http_workers
@@ -73,6 +77,25 @@ field name |  type  |description
 url        | string | Submit a compact job
 base_url   | string | probe to query compact job or shutdown to specify compact job
 web_url    | string | View the status through stat and view the log file in the browser
+
+### 1.2 Direct output to an existing DbPath
+
+Set `hoster_http_url` to the HTTP endpoint of the same `DcompactEtcd` instance on the DB host:
+
+```json
+"hoster_http_url": "http://db-host:2011/CompactionExecutorFactory/dcompact",
+"hoster_http_headers": {
+  "Authorization": "Bearer TOKEN"
+}
+```
+
+Do not append an action parameter to this URL. `hoster_http_headers` is optional.
+
+With this option enabled, dcompact_worker obtains output file numbers from the DB host and writes output SST files directly to the existing output DbPath (the last configured `cf_path`). It no longer writes output SST files under `job-xxxxx/att-xx` and then renames them. This mode is intended for object-store file systems such as S3 or OSS, where delete is supported but rename is not.
+
+The selected DbPath must already exist and must be accessible to the worker through the existing `hoster_root`/mount path mapping. Do not enable `copy_sst_files` at the same time. A worker-reported compaction failure deletes its direct output files; a successful attempt keeps them for installation by the DB host. Uninstalled files left by a host-side timeout or retry require separate cleanup.
+
+Upgrade all dcompact_worker nodes before enabling this option. Workers that do not support `hoster_http_url` are rejected instead of falling back to the legacy rename path.
 
 ## 2. dcompact worker
 
@@ -117,6 +140,7 @@ WEB\_DOMAIN | Adaptive height for dcompact worker web view iframe
 MULTI\_PROCESS | If the program using ToplingDB and its plug-ins such as CompactionFilter/EventHandler use global variables, it is impossible to execute Compact tasks from multiple DB instances in the same process. At this time, set MULTI_PROCESS to true to run Compact through multiple processes.
 ZIP\_SERVER\_OPTIONS | ToplingZipTable environment variable. when MULTI_PROCESS is true, it set the http parameters of ZipServer. For example:<br/>`export ZIP_SERVER_OPTIONS=listening_ports=8090:num_threads=32`
 FEE_URL | url for fee
+HOSTER\_HTTP\_TIMEOUT | Timeout in seconds for a worker-side file-number request. The default is 3 and the value must be positive.
 LABOUR_ID | fee.labourId, normally the host name of dcompact worker
 CLOUD_PROVIDER | fee.provider
 ENABLE_HTTP_STOP | enable http stop api, disable this feature can avoid http misoperation/attack to stop dcompact_worker, default is false
