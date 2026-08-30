@@ -798,6 +798,7 @@ class DcompactEtcdExec : public CompactExecCommon {
   const HttpParams* m_worker = nullptr;
   std::string m_labour_id;
   std::string m_full_server_id;
+  CURL* m_curl = nullptr;
   std::vector<std::string> m_copyed_files;
   hash_strmap<Status> m_copy_status;
   size_t m_num_copy_err_files = 0;
@@ -816,6 +817,7 @@ class DcompactEtcdExec : public CompactExecCommon {
   void AlertDcompactFail(const Status&);
  public:
   explicit DcompactEtcdExec(const DcompactEtcdExecFactory* fac);
+  ~DcompactEtcdExec() override;
   void SetParams(CompactionParams*, const Compaction*) override;
   Status SubmitHttp(const fstring action, const std::string& meta_jstr, size_t nth_http) noexcept;
   Status RenameFile(const std::string& src, const std::string& dst, off_t fsize) override;
@@ -1487,7 +1489,17 @@ Status DcompactEtcdExec::SubmitHttp(const fstring action,
   auto f = static_cast<const DcompactEtcdExecFactory*>(m_factory);
   char errbuf[CURL_ERROR_SIZE];
   const auto& params = *f->http_workers[nth_http];
-  CURL* curl = curl_easy_init();
+  if (nullptr == m_curl) {
+    m_curl = curl_easy_init();
+    if (nullptr == m_curl) {
+      return Status::Corruption(ROCKSDB_FUNC, "curl_easy_init failed");
+    }
+  } else {
+    // Reset request options while retaining this compaction's connections.
+    curl_easy_reset(m_curl);
+    curl_easy_setopt(m_curl, CURLOPT_COOKIELIST, "ALL");
+  }
+  CURL* curl = m_curl;
   std::string result_buf;
   curl_slist* headers = f->m_http_headers;
   if (action == "/dcompact") {
@@ -1526,6 +1538,7 @@ Status DcompactEtcdExec::SubmitHttp(const fstring action,
     curl_easy_setopt(curl, CURLOPT_SSL_OPTIONS, CURLSSLOPT_ALLOW_BEAST | CURLSSLOPT_NO_REVOKE);
   }
   auto err = curl_easy_perform(curl);
+  curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, nullptr);
   Status s;
   if (err) {
     size_t len = strlen(errbuf);
@@ -1634,7 +1647,6 @@ Status DcompactEtcdExec::SubmitHttp(const fstring action,
       }
     }
   }
-  curl_easy_cleanup(curl);
   return s;
 }
 
@@ -2098,6 +2110,10 @@ void DcompactEtcdExec::SetParams(CompactionParams* params,
     js["hoster_http_headers"] = f->hoster_http_headers;
   }
   params->extensible_js_data = js.dump();
+}
+
+DcompactEtcdExec::~DcompactEtcdExec() {
+  curl_easy_cleanup(m_curl);
 }
 
 ROCKSDB_REG_Plugin("DcompactEtcd",
